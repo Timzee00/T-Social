@@ -1,79 +1,69 @@
-# Timzee Social Platform
+# T Social — Powered by Timzee Corp
 
-A production-oriented social platform inspired by modern Instagram-class systems. The product surface is implemented as a real React + tRPC + Hono + Drizzle application, not a static mock-up.
+A React/TypeScript social application with a Hono/tRPC API, MySQL/Drizzle persistence and private S3-compatible media. This release rebuilds the **original supplied Kimi ZIP**; the earlier expanded release archives were unavailable. Earlier feature claims are not treated as implemented code.
 
-## Architecture
+## Implemented
 
-- **Web:** React 19, Vite, TypeScript, React Router, TanStack Query.
-- **API:** Hono + tRPC with authenticated procedures, request IDs, structured request logs, security headers, origin checks, body limits and rate limiting.
-- **Auth:** Kimi OAuth, Google Identity Services, Facebook Authorization Code, phone OTP/verification and Sign in with ChatGPT/OIDC hooks. All providers terminate in first-party, opaque, hashed sessions stored in MySQL.
-- **Database:** MySQL via Drizzle ORM. Hot-path indexes and denormalized engagement counters are included for feed, messaging, notifications and search-adjacent access patterns.
-- **Media:** object storage. The browser uploads directly to `/api/media/upload`; the database stores keys rather than expiring signed URLs.
-- **Distributed controls:** optional Upstash Redis REST for coordinated rate limiting. An in-process fallback remains available for local/single-instance development.
-- **Background work:** scheduled-message worker with atomic claim, stale-lock recovery, retry limits and cleanup.
-- **Recommendation boundary:** bounded candidate retrieval followed by a replaceable ranking service. The current fallback is deterministic; a learned ranker can replace it without changing the client API.
+Photo/video posts and carousels (up to 10 items), a Reels filter, For You/Following feeds, likes, comments, saves, real post links, profiles and search. Private accounts, approved follow requests and bilateral blocking are enforced by the API. Stories support views, deletion, owner archive and Highlights. Posts support three profile pins, archive and Recently Deleted with a 30-day restore window. Direct messages support read status and unsend; recipients must follow the sender. Activity, content reports, admin moderation, session management and a bounded profile/content export have working UI/API paths.
 
-## Product surface
+Google, Facebook, phone OTP and ChatGPT/OIDC sign-in implementations require actual provider registration/configuration. Unconfigured providers are hidden; no credentials or fabricated OTPs are included. Email matches never automatically merge accounts. Linking an OAuth provider requires an authenticated session created within the last five minutes.
 
-Posts, carousels, Reels, Trial Reels, Friends-style Reels, Stories, close friends, archive, highlights, Notes, Instants, profile pins, private accounts, follow requests, favorites, block/restrict, search, DMs/groups, message scheduling, reactions, attachments, broadcast channels, tagged-media Map, creator insights, drafts, trust & safety, sessions and a Live signaling foundation are implemented.
+Read [the feature matrix](docs/FEATURE-MATRIX.md) before describing the product to a buyer. This is a release candidate, not a claim of complete Instagram parity or Meta-scale infrastructure.
 
-See `docs/FEATURE-MATRIX.md` and `docs/INSTAGRAM-PARITY.md` for the precise release boundary.
+## Run locally
 
-## Production principles
+Requirements: Node >=22.13, MySQL 8 or MariaDB 10.11, a private S3-compatible bucket, and FFmpeg/FFprobe for video uploads.
 
-The system follows broad scaling principles used by large social systems: separate candidate retrieval from ranking, keep hot reads index-friendly, avoid expensive per-request scans, cache short-lived media URLs, denormalize high-frequency counters, make background work idempotent, and treat object storage as a separate media plane.
+```sh
+cp .env.example .env
+npm ci
+npm run db:migrate
+npm run dev
+```
 
-It does **not** claim to reproduce Meta's proprietary internal systems, ranking models, TAO/Memcache stack, global live-video fabric, or multi-region control plane.
+Fill `.env` before running migrations. Set `PUBLIC_APP_URL` to the exact browser origin; the default is `http://localhost:3000`. This server targets a persistent Node deployment such as Render or a container host. Static hosting alone does not run the API; long media processing is unsuitable for a short-lived serverless function.
 
-## Local setup
+For production, set an HTTPS `PUBLIC_APP_URL`, independent random `SESSION_SECRET` and `CRON_SECRET` values of at least 32 characters, database/storage configuration and your chosen provider credentials. Build with `npm run build`, then `npm start`. A Dockerfile is provided; run migrations once as a release job before starting replicas.
 
-1. Copy `.env.example` to `.env`.
-2. Configure database, object storage and the providers you intend to enable.
-3. Install with `npm ci`.
-4. Apply the Drizzle schema/migrations to the target MySQL database.
-5. Start development with `npm run dev`.
+## Provider setup
 
-Before production promotion, use `npm run check`, `npm run lint`, `npm run test`, `npm run build`, and the Playwright smoke suite.
+Register exact callbacks:
 
-## Identity providers
+- Google: `https://YOUR_DOMAIN/api/auth/google/callback`
+- Facebook: `https://YOUR_DOMAIN/api/auth/facebook/callback`
+- ChatGPT: `https://YOUR_DOMAIN/api/auth/chatgpt/callback`
 
-The application exposes one local account/session model behind the provider layer.
+Google uses Authorization Code + PKCE and server-verified OIDC tokens. Facebook uses server-side code exchange plus app/subject validation. Set `FACEBOOK_GRAPH_VERSION` to the version enabled for your Meta app. Phone login uses Twilio Verify, five verification attempts per challenge, send quotas and a configurable daily SMS budget. Configure Twilio spending/fraud/geo controls before exposing it. ChatGPT website login requires an approved/registered OAuth client; adding an OpenAI API key does not enable it. No ChatGPT conversation access is requested.
 
-- **Google:** Google Identity Services client ID + server-side ID-token verification.
-- **Facebook:** server-side authorization-code exchange using a Meta app.
-- **Phone:** Twilio Verify-style SMS verification with server-side challenge/attempt controls.
-- **ChatGPT:** OpenID Connect + Authorization Code + PKCE; provider approval/client credentials are required.
-- **Kimi:** authorization-code flow with signed short-lived state and browser binding.
+## Validation
 
-Actual provider availability depends on the provider credentials, callback/origin configuration and any approval requirements.
+```sh
+npm run check
+npm run lint
+npm test
+npm run build
+npm audit --omit=dev
+```
 
-## Required production environment
+Database integration tests use **only a dedicated database named `t_social_test`**:
 
-`APP_ID`, `APP_SECRET`, `SESSION_SECRET`, `PUBLIC_APP_URL`, `DATABASE_URL`, `KIMI_AUTH_URL`, `KIMI_OPEN_URL`, and `CRON_SECRET` are required in production.
+```sh
+DATABASE_URL=mysql://USER:PASSWORD@localhost:3306/t_social_test npm run db:migrate
+DATABASE_URL=mysql://USER:PASSWORD@localhost:3306/t_social_test npm run test:integration
+```
 
-Set the provider variables in `.env.example` for Google, Facebook, OpenAI/ChatGPT and Twilio phone sign-in. Set Upstash Redis variables for multiple application instances. Set `RELEASE_VERSION` and `COMMIT_SHA` in deployments.
+These tests delete test users and related rows. Never point them at customer data. See `docs/VALIDATION.md` for actual release results and test boundaries.
 
-## Operational endpoints
+## Operations
 
-- `GET /api/healthz` — process liveness.
-- `GET /api/readyz` — process + database readiness.
-- `GET /api/version` — release metadata.
-- `POST /api/cron/scheduled-messages` — protected background worker.
+- `GET /api/healthz`: process liveness.
+- `GET /api/readyz`: database readiness.
+- `POST /api/cron/maintenance`: invoke hourly with `Authorization: Bearer CRON_SECRET`. It purges expired authentication records, abandoned uploads and posts deleted over 30 days ago, and retries object cleanup.
 
-## Media flow
+S3 objects are private. The database stores object keys rather than signed URLs. Image uploads are decoded, resized, stripped of metadata and encoded to WebP. Supported video uploads (20 MB, 60 seconds maximum) are converted to H.264/AAC MP4. A deployment needs both FFmpeg executables and sufficient CPU/memory. Move processing into a queue-backed worker pool before large-scale use.
 
-The browser uploads media as multipart form data. The server authenticates the session, applies purpose-specific limits, validates the media signature, stores the object, records a short-lived upload claim and returns a storage key. Product mutations reference the key rather than embedding base64 payloads in tRPC requests.
+Assign an admin only through a controlled database administration process after the owner signs in. The browser cannot change roles. All report review endpoints enforce the admin role.
 
-## Verification
+## Ownership and sale
 
-The repository contains feed-ranking, media-validation and authentication-input tests, Playwright UI smoke tests, security/release documentation and a CI workflow covering install, typecheck, lint, unit tests, production build and browser smoke tests.
-
-## Known infrastructure boundaries
-
-Licensed music catalogues/rights enforcement, global Live SFU/CDN infrastructure, automated moderation, payments/payouts, dedicated search/recommendation infrastructure, full MFA/passkeys/account recovery and certain newer Instagram interaction layers remain explicit follow-up infrastructure rather than simulated UI.
-
-See:
-- `docs/PRODUCTION-READINESS.md`
-- `docs/SECURITY-RELEASE-CHECKLIST.md`
-- `docs/INSTAGRAM-PARITY.md`
-- `SECURITY.md`
+Application source modifications are intended for Timzee Corp. The supplied archive did not contain a verified license/provenance statement, so no unsupported ownership transfer or blanket license is asserted. The project is intentionally `private` in package metadata and has no open-source application license. Third-party packages retain their own licenses. Review dependency notices and media/music rights before selling or distributing the product. Do not advertise proprietary Instagram infrastructure or features listed as missing in the feature matrix.

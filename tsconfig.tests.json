@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": [
+    "tests",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ]
+}
