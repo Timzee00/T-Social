@@ -39,6 +39,8 @@ The browser runner starts a local storage emulator and development server. Its t
 
 ## Limits of the result
 
+The [first GitHub Actions run](https://github.com/Timzee00/T-Social/actions/runs/37388274561) was blocked before any workflow step started. GitHub's annotation states: “The job was not started because your account is locked due to a billing issue.” The local results above passed; remote CI has not validated this release. Resolve the GitHub account billing lock, then rerun the workflow.
+
 Integration storage operations and SMS verification use controlled mocks. Browser uploads use the real application processing/claim flow with a local S3-compatible emulator. OIDC signature tests use locally generated RSA keys. Login controls use mocked provider availability in one UI test; no live Google, Facebook, OpenAI or Twilio account was exercised. Actual client registration, callback approval, provider consent/denial and production delivery remain acceptance work.
 
 The production smoke test runs the actual compiled server locally with production settings; it does not verify a deployed TLS proxy, real bucket permissions, IAM policies or cloud network configuration. No Docker image build, mobile Safari/Firefox test, sustained load/chaos test, backup restoration, complete accessibility certification or independent penetration test was performed. Passing tests and a clean dependency audit do not prove the absence of all bugs or vulnerabilities.
