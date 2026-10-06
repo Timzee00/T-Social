@@ -7,7 +7,7 @@ export async function claimUploads(
   tx: Pick<MySql2Database<typeof schema>, "select" | "delete">,
   ids: string[],
   userId: number,
-  purpose: "post" | "avatar" | "story"
+  purpose: "post" | "avatar" | "story" | "chat" | "instant"
 ) {
   if (new Set(ids).size !== ids.length)
     throw new TRPCError({ code: "BAD_REQUEST", message: "Duplicate upload" });

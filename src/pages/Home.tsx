@@ -12,11 +12,21 @@ export default function Home() {
   const [mode, setMode] = useState<"all" | "following" | "reels">("all");
   const { data: myProfile } = trpc.social.myProfile.useQuery();
   const {
-    data: feed,
+    data: pages,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
     isLoading,
     isError,
     refetch,
-  } = trpc.social.feed.useQuery({ limit: 30, mode });
+  } = trpc.social.feed.useInfiniteQuery(
+    { limit: 30, mode },
+    {
+      getNextPageParam: page =>
+        page.length === 30 ? Math.min(...page.map(p => p.id)) : undefined,
+    }
+  );
+  const feed = pages?.pages.flat();
   const { data: suggestions } = trpc.social.suggestions.useQuery();
   const follow = trpc.social.follow.useMutation({
     onSuccess: () => utils.social.suggestions.invalidate(),
@@ -56,7 +66,7 @@ export default function Home() {
             [0, 1].map(i => (
               <div key={i} className="mb-6 border rounded-lg p-3 space-y-3">
                 <div className="flex items-center gap-3">
-                  <Skeleton className="w-9 h-9 rounded-full" />
+                  <Skeleton className="w-9 h-9 rounded-xl" />
                   <Skeleton className="h-4 w-28" />
                 </div>
                 <Skeleton className="w-full aspect-square" />
@@ -89,6 +99,15 @@ export default function Home() {
           {(feed as FeedPost[] | undefined)?.map(p => (
             <PostCard key={p.id} post={p} />
           ))}
+          {hasNextPage && (
+            <button
+              className="border rounded-lg p-3 text-sm w-full"
+              disabled={isFetchingNextPage}
+              onClick={() => void fetchNextPage()}
+            >
+              {isFetchingNextPage ? "Loading…" : "Load more posts"}
+            </button>
+          )}
         </div>
 
         {/* Suggestions rail (desktop) */}

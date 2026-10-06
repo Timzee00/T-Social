@@ -1,3 +1,5 @@
+import { rankPosts } from "./services/recommendations";
+import { hashtags } from "./services/hashtags";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, ne, sql, inArray, gt, lt, isNull } from "drizzle-orm";
@@ -14,6 +16,9 @@ import {
   savedPosts,
   notifications,
   postMedia,
+  postTags,
+  restrictions,
+  collectionPosts,
   mediaCleanup,
   storyViews,
 } from "../db/schema";
@@ -21,7 +26,8 @@ import {
 import { claimUploads } from "./services/uploads";
 import {
   visiblePost,
-  visibleAuthor,
+  visibleStory,
+  visibleComment,
   unblocked,
   requirePost,
   requireUnblocked,
@@ -82,7 +88,7 @@ export async function postCards(
   const commentCounts = await db
     .select({ postId: comments.postId, n: sql<number>`count(*)` })
     .from(comments)
-    .where(inArray(comments.postId, postIds))
+    .where(and(inArray(comments.postId, postIds), visibleComment(viewerId)))
     .groupBy(comments.postId);
 
   const myLikes = await db
@@ -179,6 +185,11 @@ export const socialRouter = createRouter({
                 "admin",
                 "api",
                 "post",
+                "wallet",
+                "social",
+                "groups",
+                "studio",
+                "map",
               ].includes(v),
             "Choose another username"
           ),
@@ -209,7 +220,12 @@ export const socialRouter = createRouter({
     }),
 
   uploadAvatar: authedQuery
-    .input(z.object({ uploadId: z.string().length(43) }))
+    .input(
+      z.object({
+        uploadId: z.string().length(43),
+        closeFriends: z.boolean().default(false),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       await ensureProfile(ctx.user.id, ctx.user.name);
       await getDb().transaction(async tx => {
@@ -271,6 +287,11 @@ export const socialRouter = createRouter({
           location: input.location || null,
           kind: input.kind,
         });
+        const tags = hashtags(input.caption || "");
+        if (tags.length)
+          await tx
+            .insert(postTags)
+            .values(tags.map(tag => ({ postId: row.insertId, tag })));
         await tx.insert(postMedia).values(
           media.map((m, position) => ({
             postId: row.insertId,
@@ -312,6 +333,7 @@ export const socialRouter = createRouter({
       z.object({
         limit: z.number().int().positive().max(50).default(30),
         before: z.number().int().positive().optional(),
+        cursor: z.number().int().positive().optional(),
         mode: z.enum(["all", "following", "reels"]).default("all"),
       })
     )
@@ -323,7 +345,9 @@ export const socialRouter = createRouter({
         .where(
           and(
             visiblePost(ctx.user.id),
-            input.before ? lt(posts.id, input.before) : undefined,
+            input.before || input.cursor
+              ? lt(posts.id, (input.before || input.cursor)!)
+              : undefined,
             input.mode === "reels" ? eq(posts.kind, "reel") : undefined,
             input.mode === "following"
               ? sql`(${posts.userId}=${ctx.user.id} OR EXISTS (SELECT 1 FROM follows f_feed WHERE f_feed.followerId=${ctx.user.id} AND f_feed.followingId=${posts.userId} AND f_feed.accepted=1))`
@@ -332,6 +356,35 @@ export const socialRouter = createRouter({
         )
         .orderBy(desc(posts.id))
         .limit(input.limit);
+      if (input.mode === "all" && rows.length) {
+        const authorIds = [...new Set(rows.map(p => p.userId))];
+        const followed = await db
+          .select({ id: follows.followingId })
+          .from(follows)
+          .where(
+            and(
+              eq(follows.followerId, ctx.user.id),
+              eq(follows.accepted, true),
+              inArray(follows.followingId, authorIds)
+            )
+          );
+        const recentLikes = await db
+          .select({ id: posts.userId })
+          .from(likes)
+          .innerJoin(posts, eq(posts.id, likes.postId))
+          .where(
+            and(eq(likes.userId, ctx.user.id), inArray(posts.userId, authorIds))
+          )
+          .orderBy(desc(likes.id))
+          .limit(100);
+        const affinity = new Map<number, number>();
+        for (const row of recentLikes)
+          affinity.set(row.id, (affinity.get(row.id) || 0) + 1);
+        return postCards(
+          rankPosts(rows, new Set(followed.map(f => f.id)), affinity),
+          ctx.user.id
+        );
+      }
       return postCards(rows, ctx.user.id);
     }),
 
@@ -528,14 +581,24 @@ export const socialRouter = createRouter({
           .values({ userId: ctx.user.id, postId: input.postId })
           .onDuplicateKeyUpdate({ set: { id: sql`${savedPosts.id}` } });
       else
-        await db
-          .delete(savedPosts)
-          .where(
-            and(
-              eq(savedPosts.userId, ctx.user.id),
-              eq(savedPosts.postId, input.postId)
-            )
-          );
+        await db.transaction(async tx => {
+          await tx
+            .delete(savedPosts)
+            .where(
+              and(
+                eq(savedPosts.userId, ctx.user.id),
+                eq(savedPosts.postId, input.postId)
+              )
+            );
+          await tx
+            .delete(collectionPosts)
+            .where(
+              and(
+                eq(collectionPosts.postId, input.postId),
+                sql`${collectionPosts.collectionId} IN (SELECT id FROM collections WHERE userId=${ctx.user.id})`
+              )
+            );
+        });
       return { ok: true };
     }),
 
@@ -563,18 +626,29 @@ export const socialRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const post = await requirePost(input.postId, ctx.user.id);
-      await getDb().insert(comments).values({
-        userId: ctx.user.id,
-        postId: input.postId,
-        text: input.text,
-      });
-      if (post.userId !== ctx.user.id)
-        await getDb().insert(notifications).values({
-          userId: post.userId,
-          actorId: ctx.user.id,
-          kind: "comment",
-          postId: post.id,
+      await getDb().transaction(async tx => {
+        await tx.insert(comments).values({
+          userId: ctx.user.id,
+          postId: input.postId,
+          text: input.text,
         });
+        const [restricted] = await tx
+          .select()
+          .from(restrictions)
+          .where(
+            and(
+              eq(restrictions.userId, post.userId),
+              eq(restrictions.targetId, ctx.user.id)
+            )
+          );
+        if (post.userId !== ctx.user.id && !restricted)
+          await tx.insert(notifications).values({
+            userId: post.userId,
+            actorId: ctx.user.id,
+            kind: "comment",
+            postId: post.id,
+          });
+      });
       return { ok: true };
     }),
 
@@ -587,10 +661,7 @@ export const socialRouter = createRouter({
         .select()
         .from(comments)
         .where(
-          and(
-            eq(comments.postId, input.postId),
-            unblocked(ctx.user.id, comments.userId)
-          )
+          and(eq(comments.postId, input.postId), visibleComment(ctx.user.id))
         )
         .orderBy(comments.createdAt)
         .limit(100);
@@ -624,12 +695,7 @@ export const socialRouter = createRouter({
     const rows = await db
       .select()
       .from(stories)
-      .where(
-        and(
-          gt(stories.createdAt, since),
-          visibleAuthor(ctx.user.id, stories.userId)
-        )
-      )
+      .where(and(gt(stories.createdAt, since), visibleStory(ctx.user.id)))
       .orderBy(desc(stories.createdAt))
       .limit(100);
     const authorIds = [...new Set(rows.map(s => s.userId))];
@@ -671,6 +737,8 @@ export const socialRouter = createRouter({
           url: string | null;
           createdAt: Date;
           viewed: boolean;
+          contentType: string;
+          closeFriends: boolean;
         }[];
       }
     >();
@@ -688,6 +756,8 @@ export const socialRouter = createRouter({
       }
       byUser.get(s.userId)!.items.push({
         id: s.id,
+        contentType: s.contentType,
+        closeFriends: s.closeFriends,
         viewed: viewedIds.has(s.id) || s.userId === ctx.user.id,
         url: urlMap.get(s.imageKey) ?? null,
         createdAt: s.createdAt,
@@ -697,7 +767,12 @@ export const socialRouter = createRouter({
   }),
 
   addStory: authedQuery
-    .input(z.object({ uploadId: z.string().length(43) }))
+    .input(
+      z.object({
+        uploadId: z.string().length(43),
+        closeFriends: z.boolean().default(false),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       await ensureProfile(ctx.user.id, ctx.user.name);
       await getDb().transaction(async tx => {
@@ -707,9 +782,12 @@ export const socialRouter = createRouter({
           ctx.user.id,
           "story"
         );
-        await tx
-          .insert(stories)
-          .values({ userId: ctx.user.id, imageKey: media.key });
+        await tx.insert(stories).values({
+          userId: ctx.user.id,
+          imageKey: media.key,
+          contentType: media.contentType,
+          closeFriends: input.closeFriends,
+        });
       });
       return { ok: true };
     }),

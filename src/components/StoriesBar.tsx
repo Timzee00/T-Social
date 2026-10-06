@@ -11,7 +11,13 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
   const groups = trpc.social.stories.useQuery();
   const file = useRef<HTMLInputElement>(null);
   const [id, setId] = useState<number | null>(null),
-    [uploading, setUploading] = useState(false);
+    [uploading, setUploading] = useState(false),
+    [closeFriends, setCloseFriends] = useState(false),
+    [reply, setReply] = useState("");
+  const reactions = trpc.community.storyReaction.useMutation({
+    onSuccess: () => setReply(""),
+  });
+
   const view = trpc.features.viewStory.useMutation();
   const markView = view.mutate;
   const flat =
@@ -25,6 +31,10 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
   const index = flat.findIndex(s => s.id === id);
   const current = flat[index];
   const mine = current?.username === myUsername;
+  const replies = trpc.community.storyReplies.useQuery(
+    { storyId: id || 1 },
+    { enabled: !!id && mine }
+  );
   const viewers = trpc.features.storyViewers.useQuery(
     { storyId: id || 1 },
     { enabled: !!id && mine }
@@ -43,6 +53,14 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
   }, [id, markView]);
   return (
     <>
+      <label className="flex items-center gap-2 px-4 pt-3 text-xs text-neutral-500">
+        <input
+          type="checkbox"
+          checked={closeFriends}
+          onChange={e => setCloseFriends(e.target.checked)}
+        />
+        New story for Close Friends only
+      </label>
       <div className="flex gap-4 overflow-x-auto p-4 scrollbar-none">
         <button
           className="flex flex-col items-center gap-2 shrink-0"
@@ -86,7 +104,7 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
       <input
         ref={file}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
         className="sr-only"
         aria-label="Story image"
         onChange={async e => {
@@ -95,7 +113,10 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
           if (!picked) return;
           setUploading(true);
           try {
-            await add.mutateAsync(await fileToUpload(picked, "story"));
+            await add.mutateAsync({
+              ...(await fileToUpload(picked, "story")),
+              closeFriends,
+            });
           } catch (error) {
             toast.error(
               error instanceof Error ? error.message : "Upload failed"
@@ -115,11 +136,55 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
       >
         {current && (
           <>
-            <img
-              src={current.url || ""}
-              alt={`${current.username}'s story`}
-              className="max-h-[65dvh] w-full object-contain rounded-lg bg-neutral-50"
-            />
+            {current.contentType.startsWith("video/") ? (
+              <video
+                src={current.url || ""}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[60dvh] w-full rounded-lg"
+              />
+            ) : (
+              <img
+                src={current.url || ""}
+                alt={`${current.username}'s story`}
+                className="max-h-[65dvh] w-full object-contain rounded-lg bg-neutral-50"
+              />
+            )}
+            {current.closeFriends && (
+              <p className="text-xs text-emerald-700">Close Friends</p>
+            )}
+            {!mine && (
+              <form
+                className="flex flex-wrap gap-2"
+                onSubmit={e => {
+                  e.preventDefault();
+                  reactions.mutate({
+                    storyId: current.id,
+                    reaction: "❤️",
+                    reply,
+                  });
+                }}
+              >
+                <input
+                  aria-label="Story reply"
+                  className="border rounded-md text-sm p-2 min-w-0 flex-1"
+                  maxLength={500}
+                  value={reply}
+                  onChange={e => setReply(e.target.value)}
+                  placeholder="Reply to this story"
+                />
+                <Button size="sm" disabled={reactions.isPending}>
+                  ❤️ Send
+                </Button>
+              </form>
+            )}
+            {mine &&
+              replies.data?.map(r => (
+                <p key={r.id} className="text-xs break-words">
+                  {r.username} {r.reaction} {r.reply}
+                </p>
+              ))}
             <div className="flex items-center justify-between">
               <Button
                 aria-label="Previous story"

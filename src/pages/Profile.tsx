@@ -44,6 +44,10 @@ export default function Profile() {
   const avatar = trpc.social.uploadAvatar.useMutation({
     onSuccess: () => utils.invalidate(),
   });
+  const reposted = trpc.community.reposted.useQuery(
+    { userId: profile.data?.userId },
+    { enabled: !!profile.data }
+  );
   const p = profile.data;
   const highlightGroups = [
     ...new Map(highlights.data?.map(h => [h.highlightId, h]) || []).values(),
@@ -196,6 +200,12 @@ export default function Profile() {
                 ))}
               </div>
             )}
+            {reposted.data && reposted.data.length > 0 && (
+              <section className="border-t mt-6 pt-4 space-y-3">
+                <h2 className="text-sm font-semibold">Reposts</h2>
+                <MediaGrid posts={reposted.data} />
+              </section>
+            )}
             <div className="border-t mt-6 pt-4">
               {p.isPrivate && !p.isMe && !p.isFollowing ? (
                 <p className="py-12 text-center text-sm text-neutral-500">
@@ -271,14 +281,23 @@ export default function Profile() {
         <div className="space-y-3">
           {highlights.data
             ?.filter(h => h.highlightId === highlightId)
-            .map(h => (
-              <img
-                key={h.storyId}
-                src={h.url}
-                alt={h.title}
-                className="w-full max-h-[60dvh] object-contain rounded-xl"
-              />
-            ))}
+            .map(h =>
+              h.contentType.startsWith("video/") ? (
+                <video
+                  key={h.storyId}
+                  src={h.url}
+                  controls
+                  className="w-full max-h-[60dvh] rounded-xl"
+                />
+              ) : (
+                <img
+                  key={h.storyId}
+                  src={h.url}
+                  alt={h.title}
+                  className="w-full max-h-[60dvh] object-contain rounded-xl"
+                />
+              )
+            )}
         </div>
       </Modal>
     </AppLayout>

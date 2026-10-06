@@ -1,7 +1,7 @@
 import * as cookie from "cookie";
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "../queries/connection";
-import { sessions, users } from "../../db/schema";
+import { sessions, users, securityEvents } from "../../db/schema";
 import { digest, randomToken } from "./security";
 import { env } from "../lib/env";
 export const sessionCookie = env.isProduction
@@ -15,14 +15,17 @@ export const cookieOptions = {
 };
 export async function createSession(userId: number, agent: string) {
   const token = randomToken();
-  await getDb()
-    .insert(sessions)
-    .values({
+  await getDb().transaction(async tx => {
+    await tx.insert(sessions).values({
       userId,
       tokenHash: digest(token),
       agent: agent.slice(0, 250),
       expiresAt: new Date(Date.now() + 7 * 86400000),
     });
+    await tx
+      .insert(securityEvents)
+      .values({ userId, event: "session_created" });
+  });
   return cookie.serialize(sessionCookie, token, {
     ...cookieOptions,
     maxAge: 7 * 86400,
@@ -47,9 +50,19 @@ export async function authenticate(headers: Headers) {
 export async function revokeCurrent(headers: Headers) {
   const token = cookie.parse(headers.get("cookie") || "")[sessionCookie];
   if (token)
-    await getDb()
-      .delete(sessions)
-      .where(eq(sessions.tokenHash, digest(token)));
+    await getDb().transaction(async tx => {
+      const [row] = await tx
+        .select({ userId: sessions.userId })
+        .from(sessions)
+        .where(eq(sessions.tokenHash, digest(token)))
+        .for("update");
+      if (row) {
+        await tx.delete(sessions).where(eq(sessions.tokenHash, digest(token)));
+        await tx
+          .insert(securityEvents)
+          .values({ userId: row.userId, event: "session_logged_out" });
+      }
+    });
 }
 export const clearSessionCookie = () =>
   cookie.serialize(sessionCookie, "", { ...cookieOptions, maxAge: 0 });

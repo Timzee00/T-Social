@@ -8,6 +8,7 @@ import {
   expect,
   vi,
 } from "vitest";
+import { resetTestDatabase } from "./helpers/reset";
 import { createTRPCClient, httpLink } from "@trpc/client";
 import superjson from "superjson";
 import sharp from "sharp";
@@ -76,7 +77,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   const db = getDb();
-  await db.delete(schema.users);
+  await resetTestDatabase();
   await db.delete(schema.rateLimits);
   await db.delete(schema.mediaCleanup);
   cookies = {};

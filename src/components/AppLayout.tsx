@@ -13,9 +13,14 @@ import {
   Settings,
   Archive,
   Shield,
+  Wallet,
+  Users,
+  MapPin,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { trpc } from "@/providers/trpc";
+import { MediaGrid } from "./MediaGrid";
 import { Avatar } from "./Avatar";
 import { CreatePostModal } from "./CreatePostModal";
 import { Modal } from "./Modal";
@@ -34,7 +39,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const results = trpc.social.searchUsers.useQuery(
     { q: search },
-    { enabled: search.length > 0 }
+    { enabled: search.length > 0 && !search.startsWith("#") }
+  );
+  const hashtag = trpc.community.search.useQuery(
+    { q: search },
+    { enabled: search.startsWith("#") && search.length > 1 }
   );
   useEffect(() => {
     const timer = setTimeout(() => setSearch(query.trim().slice(0, 50)), 250);
@@ -45,6 +54,39 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     window.addEventListener("t:create-post", open);
     return () => window.removeEventListener("t:create-post", open);
   }, []);
+  const preferences = trpc.community.preferences.useQuery(undefined, {
+    enabled: !!user,
+  });
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      document.documentElement.classList.toggle(
+        "dark",
+        preferences.data?.theme === "dark" ||
+          (preferences.data?.theme === "system" && media.matches)
+      );
+      document.documentElement.lang = preferences.data?.language || "en";
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [preferences.data?.theme, preferences.data?.language]);
+  const labels: Record<string, Record<string, string>> = {
+    fr: {
+      Home: "Accueil",
+      Explore: "Découvrir",
+      Messages: "Messages",
+      Activity: "Activité",
+      Saved: "Enregistrés",
+    },
+    yo: {
+      Home: "Ilé",
+      Explore: "Ṣàwárí",
+      Messages: "Ìfiránṣẹ́",
+      Activity: "Ìṣe",
+      Saved: "Fifipamọ́",
+    },
+  };
   const navigation = [
     { to: "/", label: "Home", Icon: Home },
     { to: "/explore", label: "Explore", Icon: Compass },
@@ -53,6 +95,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { to: "/saved", label: "Saved", Icon: Bookmark },
   ];
   const more = [
+    { to: "/wallet", label: "Wallet & rewards", Icon: Wallet },
+    { to: "/social", label: "Friends, Notes & Instants", Icon: Users },
+    { to: "/groups", label: "Groups & channels", Icon: MessageCircle },
+    { to: "/map", label: "Post map", Icon: MapPin },
+    { to: "/studio", label: "Creator studio", Icon: BarChart3 },
     { to: "/settings", label: "Settings & security", Icon: Settings },
     { to: "/library", label: "Archive & highlights", Icon: Archive },
     { to: "/saved", label: "Saved posts", Icon: Bookmark },
@@ -85,7 +132,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               }
             >
               <Icon className="w-5 h-5 shrink-0" />
-              <span className="hidden xl:block">{label}</span>
+              <span className="hidden xl:block">
+                {labels[preferences.data?.language || "en"]?.[label] || label}
+              </span>
             </NavLink>
           ))}
           <button
@@ -194,7 +243,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
       <Modal
         open={searchOpen}
-        title="Search people"
+        title="Search people & hashtags"
         onClose={() => setSearchOpen(false)}
       >
         <Input
@@ -203,8 +252,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           maxLength={50}
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Username"
+          placeholder="Username or #hashtag"
         />
+        {search.startsWith("#") && (
+          <div className="mt-4">
+            {hashtag.isFetching ? (
+              <p role="status" className="text-sm">
+                Searching posts…
+              </p>
+            ) : hashtag.error ? (
+              <p role="alert">Hashtag search unavailable.</p>
+            ) : hashtag.data?.length ? (
+              <MediaGrid posts={hashtag.data} />
+            ) : (
+              <p className="text-sm text-neutral-500">No matching posts.</p>
+            )}
+          </div>
+        )}
         {results.isFetching && (
           <p role="status" className="text-sm text-neutral-500">
             Searching…
@@ -216,6 +280,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </p>
         )}
         {search &&
+          !search.startsWith("#") &&
           !results.isFetching &&
           !results.error &&
           !results.data?.length && (

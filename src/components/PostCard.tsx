@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   Heart,
@@ -28,7 +28,64 @@ export function PostCard({ post }: { post: FeedPost }) {
     [text, setText] = useState(""),
     [reason, setReason] = useState(""),
     [slide, setSlide] = useState(0);
+  const [replyTo, setReplyTo] = useState<number | null>(null),
+    [tagged, setTagged] = useState(false);
+  const requestKey = useRef(crypto.randomUUID());
+  const commentStats = trpc.community.commentLikes.useQuery(
+    { postId: post.id },
+    { enabled: commentsOpen }
+  );
+  const collections = trpc.community.collections.useQuery(undefined, {
+    enabled: menuOpen,
+  });
+  const myReposts = trpc.community.reposted.useQuery({}, { enabled: menuOpen });
   const invalidate = () => utils.invalidate();
+  const reply = trpc.community.reply.useMutation({
+    onSuccess: () => {
+      setReplyTo(null);
+      setText("");
+      void invalidate();
+    },
+  });
+  const likeComment = trpc.community.likeComment.useMutation({
+    onSuccess: () => void utils.community.commentLikes.invalidate(),
+  });
+  const repost = trpc.community.repost.useMutation({
+    onSuccess: () => void invalidate(),
+  });
+  const collect = trpc.community.collect.useMutation({
+    onSuccess: () => {
+      setMenuOpen(false);
+      void invalidate();
+    },
+  });
+  const gift = trpc.wallet.gift.useMutation({
+    onSuccess: () => {
+      requestKey.current = crypto.randomUUID();
+      toast.success("10 T Coins sent to this creator");
+      void utils.wallet.invalidate();
+    },
+  });
+  const subscribe = trpc.wallet.subscribe.useMutation({
+    onSuccess: () => {
+      requestKey.current = crypto.randomUUID();
+      toast.success("30-day supporter membership added");
+      void utils.wallet.invalidate();
+    },
+  });
+  const clearLocation = trpc.community.clearLocation.useMutation({
+    onSuccess: () => {
+      setTagged(false);
+      toast.success("Map location removed");
+      void utils.community.map.invalidate();
+    },
+  });
+  const locate = trpc.community.setLocation.useMutation({
+    onSuccess: () => {
+      setTagged(true);
+      void utils.community.map.invalidate();
+    },
+  });
   const like = trpc.social.like.useMutation({ onSuccess: invalidate }),
     save = trpc.social.save.useMutation({ onSuccess: invalidate }),
     del = trpc.social.deletePost.useMutation({
@@ -68,6 +125,10 @@ export function PostCard({ post }: { post: FeedPost }) {
     : [{ url: post.imageUrl, contentType: "image/webp" }];
   const current = media[Math.min(slide, media.length - 1)];
   function comment() {
+    if (replyTo && text.trim() && !reply.isPending) {
+      reply.mutate({ commentId: replyTo, text: text.trim() });
+      return;
+    }
     if (text.trim() && !addComment.isPending)
       addComment.mutate({ postId: post.id, text: text.trim() });
   }
@@ -245,7 +306,7 @@ export function PostCard({ post }: { post: FeedPost }) {
         >
           <Input
             aria-label="Comment"
-            placeholder="Add a comment…"
+            placeholder={replyTo ? "Reply to comment…" : "Add a comment…"}
             className="flex-1 min-w-0 h-9"
             maxLength={500}
             value={text}
@@ -266,6 +327,111 @@ export function PostCard({ post }: { post: FeedPost }) {
         onClose={() => setMenuOpen(false)}
       >
         <div className="space-y-2">
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled={repost.isPending}
+            onClick={() =>
+              repost.mutate({
+                postId: post.id,
+                enabled: !myReposts.data?.some(p => p.id === post.id),
+              })
+            }
+          >
+            {myReposts.data?.some(p => p.id === post.id)
+              ? "Remove repost"
+              : "Repost"}
+          </Button>
+          {collections.data?.map(c => (
+            <Button
+              key={c.id}
+              className="w-full truncate"
+              variant="outline"
+              disabled={collect.isPending}
+              onClick={() =>
+                collect.mutate({
+                  collectionId: c.id,
+                  postId: post.id,
+                  enabled: true,
+                })
+              }
+            >
+              Save to {c.name}
+            </Button>
+          ))}
+          {!post.isMine && (
+            <>
+              <Button
+                className="w-full"
+                variant="outline"
+                disabled={gift.isPending}
+                onClick={() =>
+                  gift.mutate({
+                    creatorId: post.author.userId,
+                    postId: post.id,
+                    amount: 10,
+                    requestKey: requestKey.current,
+                  })
+                }
+              >
+                Gift 10 T Coins
+              </Button>
+              <Button
+                className="w-full"
+                variant="outline"
+                disabled={subscribe.isPending}
+                onClick={() =>
+                  subscribe.mutate({
+                    creatorId: post.author.userId,
+                    requestKey: requestKey.current,
+                  })
+                }
+              >
+                Support for 30 days · 200 T Coins
+              </Button>
+              <p className="text-xs text-neutral-500">
+                T Coins are virtual credits, not cash. See your wallet for
+                balances.
+              </p>
+            </>
+          )}
+          {post.isMine && (
+            <Button
+              className="w-full"
+              variant="outline"
+              disabled={locate.isPending || tagged}
+              onClick={() => {
+                if (!navigator.geolocation) {
+                  toast.error("Location is unavailable");
+                  return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                  position =>
+                    locate.mutate({
+                      postId: post.id,
+                      latitude: position.coords.latitude,
+                      longitude: position.coords.longitude,
+                    }),
+                  () => toast.error("Location permission is unavailable"),
+                  { enableHighAccuracy: false, timeout: 10000 }
+                );
+              }}
+            >
+              {tagged
+                ? "Approximate location added"
+                : "Add my approximate location to map"}
+            </Button>
+          )}
+          {post.isMine && (
+            <Button
+              className="w-full"
+              variant="outline"
+              disabled={clearLocation.isPending}
+              onClick={() => clearLocation.mutate({ postId: post.id })}
+            >
+              Remove map location
+            </Button>
+          )}
           {post.isMine ? (
             <>
               <Button
@@ -341,11 +507,38 @@ export function PostCard({ post }: { post: FeedPost }) {
           </Button>
         </form>
       </Modal>
+      {replyTo && (
+        <p className="text-xs px-4 pb-2">
+          Reply selected.{" "}
+          <button className="underline" onClick={() => setReplyTo(null)}>
+            Cancel reply
+          </button>
+        </p>
+      )}
       <Modal
         open={commentsOpen}
         title="Comments"
         onClose={() => setCommentsOpen(false)}
       >
+        {replyTo && (
+          <form
+            className="flex gap-2"
+            onSubmit={e => {
+              e.preventDefault();
+              comment();
+            }}
+          >
+            <Input
+              aria-label="Comment reply"
+              maxLength={500}
+              value={text}
+              onChange={e => setText(e.target.value)}
+            />
+            <Button size="sm" disabled={!text.trim() || reply.isPending}>
+              Reply
+            </Button>
+          </form>
+        )}
         <div className="space-y-4 max-h-[50dvh] overflow-y-auto">
           {comments.isLoading && (
             <p role="status" className="text-sm">
@@ -367,9 +560,41 @@ export function PostCard({ post }: { post: FeedPost }) {
                 <Link to={`/${c.username}`} className="font-semibold mr-2">
                   {c.username}
                 </Link>
+                {commentStats.data?.find(v => v.commentId === c.id)
+                  ?.parentId && (
+                  <p className="text-xs text-neutral-500">Reply</p>
+                )}
                 <span className="whitespace-pre-wrap break-words">
                   {c.text}
                 </span>
+                <div className="flex gap-3 mt-1 text-xs">
+                  <button
+                    className="underline"
+                    onClick={() => setReplyTo(c.id)}
+                  >
+                    Reply
+                  </button>
+                  <button
+                    className="underline"
+                    disabled={likeComment.isPending}
+                    aria-label="Like comment"
+                    onClick={() =>
+                      likeComment.mutate({
+                        commentId: c.id,
+                        like: !Number(
+                          commentStats.data?.find(v => v.commentId === c.id)
+                            ?.liked
+                        ),
+                      })
+                    }
+                  >
+                    ♡{" "}
+                    {Number(
+                      commentStats.data?.find(v => v.commentId === c.id)
+                        ?.count ?? 0
+                    )}
+                  </button>
+                </div>
                 <p className="text-xs text-neutral-400 mt-1">
                   {timeAgo(c.createdAt)} ago
                 </p>
@@ -396,7 +621,7 @@ export function PostCard({ post }: { post: FeedPost }) {
         >
           <Input
             aria-label="Comment"
-            placeholder="Add a comment…"
+            placeholder={replyTo ? "Reply to comment…" : "Add a comment…"}
             maxLength={500}
             value={text}
             onChange={e => setText(e.target.value)}

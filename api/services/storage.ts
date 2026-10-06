@@ -63,6 +63,15 @@ export const storage = {
     );
     return { urls };
   },
+  async readFile(key: string) {
+    const { client, bucket } = config();
+    const result = await client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key })
+    );
+    if (!result.Body || (result.ContentLength ?? 0) > 20 * 1024 * 1024)
+      throw new Error("Invalid private media");
+    return Buffer.from(await result.Body.transformToByteArray());
+  },
   async deleteFile({ fileKey }: { fileKey: string }) {
     const { client, bucket } = config();
     await client.send(

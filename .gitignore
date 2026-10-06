@@ -43,3 +43,5 @@ coverage/
 !.env.example
 test-results/
 playwright-report/
+
+qa-results/

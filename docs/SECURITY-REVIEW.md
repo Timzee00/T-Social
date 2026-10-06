@@ -23,8 +23,18 @@ The deeper review also corrected a repeated-delete bypass of the 30-day restore 
 
 - OAuth and SMS provider acceptance tests require registered clients and test accounts. Cryptographic validator tests use locally signed tokens, not real Google/Meta/OpenAI sign-ins.
 - Two-minute signed media URLs remain readable until expiry if access is subsequently revoked. Immediate media revocation needs an authorization gateway or CDN token invalidation.
-- Media is processed inline with strict limits; before traffic growth, use isolated workers, queues, per-instance concurrency controls and maintained FFmpeg/system packages. Automatic content moderation is not implemented.
+- Media is processed inline with strict limits; before traffic growth, use isolated workers, queues, fleet admission controls and maintained FFmpeg/system packages. Automatic content moderation is not implemented.
 - SQL-backed rate limits coordinate replicas. A configured proxy IP header must be overwritten by a trusted proxy; never trust a raw client-supplied forwarded header. Add infrastructure/WAF protection and SMS provider fraud/spending controls before public exposure.
 - Cleanup retries do not make database and object storage atomic. A process dying between S3 upload and DB recording can leave an orphan object; use scheduled object reconciliation and retention policies.
 - The export covers profile and bounded content rows, not complete GDPR-style portability. App-managed MFA, full account recovery/deletion, moderation appeals and age/parental controls remain gaps.
 - No sustained load/chaos test or backup restoration was performed. No Meta-scale claim is made.
+
+## Social and wallet expansion
+
+Close Friends now applies to video Stories, view/reaction endpoints and Highlight media. Restriction filters apply to comment retrieval, counts and comment-like/reply targets; notification suppression and DM sending honor the restricted relationship. Collections, reposts, hashtag search and post coordinates reapply original-post visibility. Instants have explicit recipients and an atomic one-time opening, with server-validated expiry and blocks. Camera capture is a browser feature; screenshot prevention and device attestation are not claimed.
+
+Groups require accepted membership, have a stable message-ID boundary for pre-join history, rotate hashed invitation codes and check capacity under a thread lock. Replies cannot address another thread or inaccessible history. Scheduling does not expose messages before delivery. Per-message receipts resolve out-of-order scheduling. Pin updates serialize to enforce three. Attachment claims are owner/purpose scoped, and deletion queues media cleanup. Reactions/read records are loaded in bounded batches rather than one SQL query per message.
+
+The wallet uses paired journal entries, consistent account locks, safe integer amounts, unique semantic request references, nonnegative user balances and retained records. Funded campaigns serialize budget claims; cash is reserved before submission. Unknown provider responses remain reserved. Exact raw-body HMAC and independent provider verification precede financial updates. Moderator role alone grants no wallet operations: the server allowlist is also required. Sensitive wallet changes require a recent session; PIN hashes use random salts and scrypt, with SQL attempt quotas. Session and wallet events omit PINs, bank details, credentials and raw authentication tokens.
+
+A global per-process admission limit now bounds two upload decoders/FFmpeg pipelines before multipart parsing. This is a local resource guard, not fleet-wide abuse protection. The high-confidence source secret scan is reproducible and does not print detected values. Provider credentials, production storage/IAM, actual payment/identity operations and independent penetration testing remain unverified. Code review cannot establish absence of every possible bug.

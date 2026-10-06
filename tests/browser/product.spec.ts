@@ -73,6 +73,11 @@ for (const width of [320, 375, 768, 1024, 1440])
       "/messages",
       "/notifications",
       "/library",
+      "/wallet",
+      "/groups",
+      "/social",
+      "/map",
+      "/studio",
     ]) {
       await page.goto(path);
       await expect(
@@ -292,6 +297,96 @@ test("post archive, deletion and restore round trip through the UI", async ({
   await expect(
     page.getByText("Browser-created carousel", { exact: false }).first()
   ).toBeVisible();
+});
+test("wallet welcome reward survives reload and cannot be claimed twice", async ({
+  page,
+  context,
+}) => {
+  await signIn(context);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto("/wallet");
+  const reward = page
+    .getByText("Welcome to T Social")
+    .locator("..")
+    .locator("..");
+  await reward.getByRole("button", { name: "Claim", exact: true }).click();
+  await expect(reward.getByRole("button", { name: "Claimed" })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByText("100", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("No cash signup bonus is promised.", { exact: false })
+  ).toBeVisible();
+  await noOverflow(page);
+  await page.screenshot({
+    path: "test-results/wallet-mobile.png",
+    fullPage: true,
+  });
+});
+test("collections, Notes, group invites, replies and edits work at 320px", async ({
+  page,
+  context,
+  browser,
+}) => {
+  await signIn(context);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto("/saved");
+  await page
+    .getByLabel("Collection name")
+    .fill("Places I love " + "long".repeat(8));
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /Places I love/ })
+  ).toBeVisible();
+  await noOverflow(page);
+  await page.goto("/social");
+  await page
+    .getByLabel("Note", { exact: true })
+    .fill("A real note for friends");
+  await page.getByLabel("Close Friends only", { exact: true }).check();
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  await expect(
+    page.getByText("A real note for friends", { exact: true })
+  ).toBeVisible();
+  await page.goto("/groups");
+  await page
+    .getByLabel("Group name")
+    .fill("Timzee friends " + "long".repeat(12));
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByLabel("Group message").fill("Before you joined");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Create invite" }).click();
+  const invite = await page.getByLabel("Invite link").inputValue();
+  const bobContext = await browser.newContext({
+    viewport: { width: 320, height: 900 },
+  });
+  await signIn(bobContext, "bob");
+  const bob = await bobContext.newPage();
+  await bob.goto(invite);
+  await bob.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(bob.getByLabel("Group message")).toBeVisible();
+  await expect(bob.getByText("Before you joined", { exact: true })).toHaveCount(
+    0
+  );
+  await page.getByLabel("Group message").fill("Welcome, friend");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(bob.getByText("Welcome, friend", { exact: true })).toBeVisible({
+    timeout: 10000,
+  });
+  await bob.getByRole("button", { name: "Reply", exact: true }).click();
+  await bob.getByLabel("Group message").fill("My group reply");
+  await bob.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(bob.getByText("My group reply", { exact: true })).toBeVisible();
+  await bob.getByRole("button", { name: "Edit", exact: true }).click();
+  await bob.getByLabel("Edit message").fill("My edited reply");
+  await bob.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(bob.getByText("My edited reply", { exact: true })).toBeVisible();
+  await noOverflow(page);
+  await noOverflow(bob);
+  await bob.screenshot({
+    path: "test-results/group-mobile.png",
+    fullPage: true,
+  });
+  await bobContext.close();
 });
 test("messaging, read state and logout work through the UI", async ({
   page,

@@ -1,16 +1,17 @@
+import { resetTestDatabase } from "../helpers/reset";
 import fs from "node:fs/promises";
 import sharp from "sharp";
 import { eq } from "drizzle-orm";
 import { getDb, closeDb } from "../../api/queries/connection";
 import { resolveAccount } from "../../api/auth/accounts";
 import { createSession } from "../../api/auth/sessions";
-import { users, profiles, posts, postMedia, rateLimits } from "../../db/schema";
+import { profiles, posts, postMedia, rateLimits } from "../../db/schema";
 import { storage } from "../../api/services/storage";
 export default async function setup() {
   if (!process.env.DATABASE_URL?.split("?")[0].endsWith("/t_social_test"))
     throw new Error("Browser tests require t_social_test");
   const db = getDb();
-  await db.delete(users);
+  await resetTestDatabase();
   await db.delete(rateLimits);
   const accounts: Record<string, { id: number; cookie: string }> = {};
   for (const name of ["alice", "bob"]) {

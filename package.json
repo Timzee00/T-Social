@@ -19,7 +19,8 @@
     "test:unit": "vitest run",
     "format:check": "prettier --check .",
     "test:browser": "playwright test",
-    "test:production": "node scripts/smoke-production.mjs"
+    "test:production": "node scripts/smoke-production.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1140.0",

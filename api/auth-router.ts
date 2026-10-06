@@ -2,7 +2,7 @@ import { and, eq, ne, gt } from "drizzle-orm";
 import { z } from "zod";
 import { createRouter, authedQuery, publicQuery } from "./middleware";
 import { clearSessionCookie, revokeCurrent } from "./auth/sessions";
-import { sessions, authIdentities } from "../db/schema";
+import { sessions, authIdentities, securityEvents } from "../db/schema";
 import { getDb } from "./queries/connection";
 export const authRouter = createRouter({
   me: publicQuery.query(({ ctx }) =>
@@ -42,6 +42,9 @@ export const authRouter = createRouter({
         .where(
           and(eq(sessions.id, input.id), eq(sessions.userId, ctx.user.id))
         );
+      await getDb()
+        .insert(securityEvents)
+        .values({ userId: ctx.user.id, event: "session_revocation_requested" });
       if (input.id === ctx.session?.id)
         ctx.resHeaders.append("set-cookie", clearSessionCookie());
       return { ok: true };

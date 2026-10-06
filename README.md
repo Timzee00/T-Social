@@ -4,11 +4,15 @@ A React/TypeScript social application with a Hono/tRPC API, MySQL/Drizzle persis
 
 ## Implemented
 
-Photo/video posts and carousels (up to 10 items), a Reels filter, For You/Following feeds, likes, comments, saves, real post links, profiles and search. Private accounts, approved follow requests and bilateral blocking are enforced by the API. Stories support views, deletion, owner archive and Highlights. Posts support three profile pins, archive and Recently Deleted with a 30-day restore window. Direct messages support read status and unsend; recipients must follow the sender. Activity, content reports, admin moderation, session management and a bounded profile/content export have working UI/API paths.
+Photo/video posts and 10-item carousels, personalized bounded For You/Following feeds with pagination, Reels and Friends Reels, likes, comment replies/likes, hashtags, collections, reposts and profile controls. Private accounts, blocks, restrict and Close Friends are enforced on the server. Stories support video, views/reactions/replies, owner archive and private Highlights. Notes and one-time Instants have 24-hour expiry; the post map uses only explicitly shared approximate coordinates.
+
+Group chats support acceptance, invite codes, media attachments, reply transport, edits, reactions, three pins, scheduling and per-message read receipts. Broadcast channels, caption drafts, creator gift/supporter records and post analytics have working screens. Rich group messaging is separate from the basic legacy direct-message view. Translation requires a configured HTTPS service.
+
+The wallet separates nonwithdrawable T Coins from funded NGN earnings. Coin tasks, post gifts and supporter records work locally. Cash campaigns, PIN-protected reserved withdrawals, payment verification, operator review and reconciliation are implemented behind a default-off provider gate. Wallet operators require both admin role and a server allowlist. There are no cash signup promises, user deposits or coin-to-cash conversion. Read [wallet operations](docs/WALLET-OPERATIONS.md) before configuring payments.
 
 Google, Facebook, phone OTP and ChatGPT/OIDC sign-in implementations require actual provider registration/configuration. Unconfigured providers are hidden; no credentials or fabricated OTPs are included. Email matches never automatically merge accounts. Linking an OAuth provider requires an authenticated session created within the last five minutes.
 
-Read [the feature matrix](docs/FEATURE-MATRIX.md) before describing the product to a buyer. This is a release candidate, not a claim of complete Instagram parity or Meta-scale infrastructure.
+Read [the feature matrix](docs/FEATURE-MATRIX.md) before describing the product to a buyer. This is a staging release candidate. Group calls and licensed music remain unimplemented. [Launch readiness](docs/LAUNCH-READINESS.md) does not approve a millions/billions-user public launch.
 
 ## Run locally
 
@@ -40,6 +44,7 @@ Google uses Authorization Code + PKCE and server-verified OIDC tokens. Facebook 
 ```sh
 npm run check
 npm run lint
+npm run check:secrets
 npm test
 npm run build
 npm audit --omit=dev
@@ -58,7 +63,7 @@ These tests delete test users and related rows. Never point them at customer dat
 
 - `GET /api/healthz`: process liveness.
 - `GET /api/readyz`: database readiness.
-- `POST /api/cron/maintenance`: invoke hourly with `Authorization: Bearer CRON_SECRET`. It purges expired authentication records, abandoned uploads and posts deleted over 30 days ago, and retries object cleanup.
+- `POST /api/cron/maintenance`: invoke hourly with `Authorization: Bearer CRON_SECRET`. It purges expired authentication records, abandoned uploads and posts deleted over 30 days ago, and expired Instants, and retries object cleanup.
 
 S3 objects are private. The database stores object keys rather than signed URLs. Image uploads are decoded, resized, stripped of metadata and encoded to WebP. Supported video uploads (20 MB, 60 seconds maximum) are converted to H.264/AAC MP4. A deployment needs both FFmpeg executables and sufficient CPU/memory. Move processing into a queue-backed worker pool before large-scale use.
 

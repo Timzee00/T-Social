@@ -6,6 +6,8 @@ import { getDb } from "./queries/connection";
 import {
   profiles,
   follows,
+  preferences,
+  restrictions,
   blocks,
   posts,
   stories,
@@ -21,6 +23,7 @@ import {
 } from "../db/schema";
 import {
   visibleAuthor,
+  visibleStory,
   unblocked,
   requirePost,
   requireUnblocked,
@@ -285,7 +288,7 @@ export const featuresRouter = createRouter({
         .where(
           and(
             eq(stories.id, input.storyId),
-            visibleAuthor(ctx.user.id, stories.userId),
+            visibleStory(ctx.user.id),
             or(
               gt(stories.createdAt, since()),
               sql`EXISTS(SELECT 1 FROM highlight_stories hs WHERE hs.storyId=${stories.id})`
@@ -376,7 +379,9 @@ export const featuresRouter = createRouter({
           eq(highlightStories.highlightId, highlights.id)
         )
         .innerJoin(stories, eq(stories.id, highlightStories.storyId))
-        .where(eq(highlights.userId, input.userId))
+        .where(
+          and(eq(highlights.userId, input.userId), visibleStory(ctx.user.id))
+        )
         .orderBy(desc(highlights.id), stories.id)
         .limit(200);
       const { urls } = await storage.getPresignedUrls({
@@ -386,6 +391,7 @@ export const featuresRouter = createRouter({
         highlightId: r.highlight.id,
         title: r.highlight.title,
         storyId: r.story.id,
+        contentType: r.story.contentType,
         url: urls[i],
       }));
     }),
@@ -472,7 +478,24 @@ export const featuresRouter = createRouter({
           )
         )
         .limit(1);
-      if (!permission)
+      const [prefs] = await getDb()
+        .select()
+        .from(preferences)
+        .where(eq(preferences.userId, input.userId));
+      const [restricted] = await getDb()
+        .select()
+        .from(restrictions)
+        .where(
+          and(
+            eq(restrictions.userId, input.userId),
+            eq(restrictions.targetId, ctx.user.id)
+          )
+        );
+      if (
+        restricted ||
+        prefs?.requests === "nobody" ||
+        (!permission && prefs?.requests !== "everyone")
+      )
         throw new TRPCError({
           code: "FORBIDDEN",
           message: "This person must follow you before you can message them",

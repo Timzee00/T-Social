@@ -2,6 +2,8 @@ import { and, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import {
   posts,
+  instants,
+  notes,
   postMedia,
   uploads,
   mediaCleanup,
@@ -27,6 +29,20 @@ export async function runMaintenance() {
         .onDuplicateKeyUpdate({ set: { key: row.key } });
       await tx.delete(uploads).where(eq(uploads.id, row.id));
     }
+    const expiredInstants = await tx
+      .select()
+      .from(instants)
+      .where(lt(instants.expiresAt, new Date()))
+      .limit(100)
+      .for("update", { skipLocked: true });
+    for (const row of expiredInstants) {
+      await tx
+        .insert(mediaCleanup)
+        .values({ key: row.key })
+        .onDuplicateKeyUpdate({ set: { key: row.key } });
+      await tx.delete(instants).where(eq(instants.id, row.id));
+    }
+    await tx.delete(notes).where(lt(notes.expiresAt, new Date()));
     const deleted = await tx
       .select()
       .from(posts)

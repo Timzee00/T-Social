@@ -14,6 +14,7 @@ import { getDb } from "./queries/connection";
 import { runMaintenance } from "./services/maintenance";
 import { safeEqual, validOrigin, keyedHash } from "./auth/security";
 import authRoutes from "./auth/routes";
+import walletRoutes from "./wallet/routes";
 import mediaRoutes from "./services/media-routes";
 const app = new Hono<{ Bindings: HttpBindings }>();
 app.use(
@@ -42,7 +43,7 @@ app.use("/api/*", async (c, next) => {
   c.header("x-request-id", id);
   c.header("cache-control", "no-store");
   if (
-    c.req.path !== "/api/cron/maintenance" &&
+    !["/api/cron/maintenance", "/api/wallet/paystack"].includes(c.req.path) &&
     !["GET", "HEAD", "OPTIONS"].includes(c.req.method) &&
     !validOrigin(c.req.raw.headers, env.publicUrl)
   )
@@ -97,6 +98,7 @@ app.post("/api/cron/maintenance", async c => {
 });
 app.route("/api/auth", authRoutes);
 app.route("/api/media", mediaRoutes);
+app.route("/api/wallet", walletRoutes);
 app.use("/api/trpc/*", c =>
   fetchRequestHandler({
     endpoint: "/api/trpc",

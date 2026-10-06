@@ -21,7 +21,12 @@ export function Avatar({
         ring && "ring-2 ring-offset-2 ring-rose-400",
         className
       )}
-      style={{ width: size, height: size, fontSize: size * 0.34 }}
+      style={{
+        width: size,
+        height: size,
+        fontSize: size * 0.34,
+        borderRadius: Math.min(12, Math.round(size * 0.22)),
+      }}
     >
       {src && src !== failed ? (
         <img

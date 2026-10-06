@@ -1,11 +1,10 @@
 export async function fileToUpload(
   file: File,
-  purpose: "post" | "avatar" | "story" = "post"
+  purpose: "post" | "avatar" | "story" | "chat" | "instant" = "post"
 ) {
-  const allowed =
-    purpose === "post"
-      ? ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]
-      : ["image/jpeg", "image/png", "image/webp"];
+  const allowed = ["post", "story", "chat"].includes(purpose)
+    ? ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]
+    : ["image/jpeg", "image/png", "image/webp"];
   if (
     !allowed.includes(file.type) ||
     !file.size ||
