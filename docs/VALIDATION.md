@@ -54,3 +54,7 @@ The additional database tests cover 20 concurrent duplicate welcome claims, sema
 The local bounded read diagnostic completed 30 concurrent authenticated feed requests over 1000 synthetic posts: p50 **111 ms**, p95 **129 ms**, maximum **129 ms** on this execution. Signing/storage was mocked and requests used the local Hono test adapter. These results are not internet measurements, sustained capacity or a million-user estimate. The integration suite writes `qa-results/read-load.json` for reproduction.
 
 The final source passes TypeScript, ESLint, formatting, the production build and production smoke. Route-level code splitting reduces the initial main JS chunk from roughly 517 kB to 356 kB (about 111 kB gzip), with other chunks loaded on demand; this is a build measurement, not a measured page-speed score. All measurements are environment-specific.
+
+## Published workflow status
+
+The feature commit `56d31573a25502a36bea04a8fdd95254fa701878` was published to `main`. Its [GitHub Actions run](https://github.com/Timzee00/T-Social/actions/runs/37420335968) completed with a failure before any job step started. The check annotation again reports that the GitHub account is locked due to a billing issue. This is a remote execution blocker, not a passing CI result. The release's local tests remain the evidence described above.
