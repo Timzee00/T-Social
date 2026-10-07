@@ -5,7 +5,15 @@ import { eq } from "drizzle-orm";
 import { getDb, closeDb } from "../../api/queries/connection";
 import { resolveAccount } from "../../api/auth/accounts";
 import { createSession } from "../../api/auth/sessions";
-import { profiles, posts, postMedia, rateLimits } from "../../db/schema";
+import {
+  profiles,
+  posts,
+  postMedia,
+  rateLimits,
+  chatThreads,
+  chatMembers,
+  chatMessages,
+} from "../../db/schema";
 import { storage } from "../../api/services/storage";
 export default async function setup() {
   if (!process.env.DATABASE_URL?.split("?")[0].endsWith("/t_social_test"))
@@ -37,6 +45,42 @@ export default async function setup() {
       id,
       cookie: (await createSession(id, "Browser test")).split(";")[0],
     };
+  }
+  for (const title of [
+    "History fixture",
+    "Second conversation",
+    "Broadcast fixture",
+  ]) {
+    const [thread] = await db.insert(chatThreads).values({
+      ownerId: accounts.alice.id,
+      title,
+      kind: title === "Broadcast fixture" ? "broadcast" : "group",
+    });
+    await db.insert(chatMembers).values(
+      [accounts.alice.id, accounts.bob.id].map(userId => ({
+        threadId: thread.insertId,
+        userId,
+        accepted: true,
+      }))
+    );
+    if (title === "History fixture")
+      await db.insert(chatMessages).values(
+        Array.from({ length: 125 }, (_, i) => ({
+          threadId: thread.insertId,
+          senderId: accounts.alice.id,
+          text:
+            i === 0
+              ? "Old pinned message " + "unbroken".repeat(150)
+              : `History message ${i}`,
+          pinned: i === 0,
+        }))
+      );
+    if (title === "Broadcast fixture")
+      await db.insert(chatMessages).values({
+        threadId: thread.insertId,
+        senderId: accounts.alice.id,
+        text: "An owner announcement",
+      });
   }
   const avatar = await storage.uploadFile({
     fileContent: await sharp({

@@ -6,9 +6,16 @@ if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = mysql.createPool({
   uri: process.env.DATABASE_URL,
   connectionLimit: 1,
+  timezone: "Z",
 });
 try {
-  await migrate(drizzle(pool), { migrationsFolder: "./db/migrations" });
+  const connection = await pool.getConnection();
+  try {
+    await connection.query("SET SESSION time_zone = '+00:00'");
+    await migrate(drizzle(connection), { migrationsFolder: "./db/migrations" });
+  } finally {
+    connection.release();
+  }
   console.log("Migrations applied");
 } finally {
   await pool.end();

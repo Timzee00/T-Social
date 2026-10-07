@@ -1,6 +1,6 @@
 # Public launch and scaling assessment
 
-**Decision: not approved for a millions/billions-user public launch. Live cash is disabled by default.** The code has useful working features and local regression evidence; that is not a deployment, capacity certification, independent penetration test or regulated financial approval.
+**Decision: not ready for unrestricted public production use, including any millions/billions-user launch. Live cash is disabled by default.** The code has useful working features and local regression evidence; that is not a deployment, capacity certification, independent penetration test or regulated financial approval.
 
 ## Evidence and immediate boundaries
 
@@ -36,3 +36,7 @@ Aggregate counts currently scan relevant SQL rows. Creator analytics and the fin
 | People          | Abuse/report operations, account recovery, customer support, on-call response and qualified security/financial review.                                                                        |
 
 Capacity approval must use measured throughput, latency, error rate, saturation, queue depth, cost and recovery against representative traffic and data. Increase rollout only after those measurements and operating controls pass. No extrapolation from the local sample is a valid million-user approval.
+
+## Messaging update deployment note
+
+Apply migration `0003_smooth_jazinda.sql` through `npm run db:migrate` before deploying the updated application. It adds history-cursor and pinned-message indexes; on a large existing table, assess index-build time and locking on staging first. Application and migration connections now explicitly use UTC. If a previous installation used a non-UTC database session, audit timestamp history as described in the security review before rollout. These fixes do not remove the live-provider, operations, capacity or cash-launch gates above.

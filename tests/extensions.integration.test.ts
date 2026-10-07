@@ -11,7 +11,7 @@ import {
 import { createTRPCClient, httpLink } from "@trpc/client";
 import sharp from "sharp";
 import superjson from "superjson";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as s from "../db/schema";
 import { getDb, closeDb } from "../api/queries/connection";
 import { resolveAccount } from "../api/auth/accounts";
@@ -575,6 +575,201 @@ describe("social and story access boundaries", () => {
   });
 });
 describe("group and broadcast security", () => {
+  it("keeps database defaults and application dates in UTC on every pooled connection", async () => {
+    // Running against a non-UTC database server catches a driver-only timezone fix.
+    await closeDb();
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        getDb().transaction(async tx => {
+          const [rows] = await tx.execute(
+            sql`SELECT @@session.time_zone AS zone`
+          );
+          expect((rows as unknown as { zone: string }[])[0].zone).toBe(
+            "+00:00"
+          );
+          const before = Date.now();
+          const [thread] = await tx.insert(s.chatThreads).values({
+            ownerId: alice,
+            title: "Clock regression",
+            kind: "group",
+          });
+          const [message] = await tx.insert(s.chatMessages).values({
+            threadId: thread.insertId,
+            senderId: alice,
+            text: "Default timestamps",
+          });
+          const [stored] = await tx
+            .select()
+            .from(s.chatMessages)
+            .where(eq(s.chatMessages.id, message.insertId));
+          expect(stored.deliverAt.getTime()).toBeGreaterThanOrEqual(
+            before - 1000
+          );
+          expect(stored.deliverAt.getTime()).toBeLessThanOrEqual(Date.now());
+          expect(stored.createdAt.getTime()).toBe(stored.deliverAt.getTime());
+        })
+      )
+    );
+  });
+  it("paginates without duplicates and retrieves old pins without bypassing membership", async () => {
+    const t = await client(alice).chat.create.mutate({ title: "Long history" });
+    await client(bob).chat.join.mutate(
+      await client(alice).chat.invite.mutate({ threadId: t.id })
+    );
+    await getDb()
+      .insert(s.chatMessages)
+      .values(
+        Array.from({ length: 125 }, (_, i) => ({
+          threadId: t.id,
+          senderId: alice,
+          text: `History ${i}`,
+          pinned: i === 0,
+        }))
+      );
+    const first = await client(bob).chat.messages.query({ threadId: t.id });
+    const second = await client(bob).chat.messages.query({
+      threadId: t.id,
+      before: first[0].id,
+    });
+    const third = await client(bob).chat.messages.query({
+      threadId: t.id,
+      before: second[0].id,
+    });
+    expect([first.length, second.length, third.length]).toEqual([50, 50, 25]);
+    expect(new Set([...first, ...second, ...third].map(m => m.id)).size).toBe(
+      125
+    );
+    expect(third[0].text).toBe("History 0");
+    const pins = await client(bob).chat.messages.query({
+      threadId: t.id,
+      pinnedOnly: true,
+    });
+    expect(pins.map(m => m.text)).toEqual(["History 0"]);
+    await expect(
+      client(carol).chat.messages.query({ threadId: t.id, pinnedOnly: true })
+    ).rejects.toThrow();
+    await client(bob).chat.leave.mutate({ threadId: t.id });
+    await expect(
+      client(bob).chat.messages.query({ threadId: t.id, pinnedOnly: true })
+    ).rejects.toThrow();
+    await client(bob).chat.join.mutate(
+      await client(alice).chat.invite.mutate({ threadId: t.id })
+    );
+    expect(
+      await client(bob).chat.messages.query({
+        threadId: t.id,
+        pinnedOnly: true,
+      })
+    ).toEqual([]);
+  });
+  it("records only displayed receipts and rejects hidden or cross-thread IDs atomically", async () => {
+    const t = await client(alice).chat.create.mutate({
+      title: "Exact receipts",
+    });
+    const prior = await client(alice).chat.send.mutate({
+      threadId: t.id,
+      text: "Pre-join",
+    });
+    await client(bob).chat.join.mutate(
+      await client(alice).chat.invite.mutate({ threadId: t.id })
+    );
+    const visible = await client(alice).chat.send.mutate({
+      threadId: t.id,
+      text: "Visible pin",
+    });
+    const unseen = await client(alice).chat.send.mutate({
+      threadId: t.id,
+      text: "Unseen",
+    });
+    const future = await client(alice).chat.send.mutate({
+      threadId: t.id,
+      text: "Future",
+      deliverAt: new Date(Date.now() + 60000),
+    });
+    const other = await client(alice).chat.create.mutate({ title: "Other" });
+    const foreign = await client(alice).chat.send.mutate({
+      threadId: other.id,
+      text: "Foreign",
+    });
+    for (const hidden of [prior.id, future.id, foreign.id]) {
+      await expect(
+        client(bob).chat.readDisplayed.mutate({
+          threadId: t.id,
+          messageIds: [visible.id, hidden],
+        })
+      ).rejects.toThrow();
+    }
+    expect(await getDb().select().from(s.chatReceipts)).toEqual([]);
+    await client(bob).chat.readDisplayed.mutate({
+      threadId: t.id,
+      messageIds: [visible.id, visible.id],
+    });
+    await client(bob).chat.readDisplayed.mutate({
+      threadId: t.id,
+      messageIds: [visible.id],
+    });
+    const rows = await client(alice).chat.messages.query({ threadId: t.id });
+    expect(rows.find(m => m.id === visible.id)?.readBy).toBe(1);
+    expect(rows.find(m => m.id === unseen.id)?.readBy).toBe(0);
+    expect(rows.find(m => m.id === future.id)?.readBy).toBe(0);
+    await client(bob).features.block.mutate({ userId: alice, block: true });
+    await expect(
+      client(bob).chat.readDisplayed.mutate({
+        threadId: t.id,
+        messageIds: [visible.id],
+      })
+    ).rejects.toThrow();
+  });
+  it("changes and removes reactions while protecting blocked and deleted pins", async () => {
+    const t = await client(alice).chat.create.mutate({
+      title: "Reaction privacy",
+    });
+    for (const who of [bob, carol])
+      await client(who).chat.join.mutate(
+        await client(alice).chat.invite.mutate({ threadId: t.id })
+      );
+    const m = await client(bob).chat.send.mutate({
+      threadId: t.id,
+      text: "React here",
+    });
+    await client(bob).chat.update.mutate({ id: m.id, action: "pin" });
+    await client(carol).chat.react.mutate({ id: m.id, reaction: "🔥" });
+    await client(carol).chat.react.mutate({ id: m.id, reaction: "😂" });
+    let rows = await client(carol).chat.messages.query({
+      threadId: t.id,
+      pinnedOnly: true,
+    });
+    expect(rows[0].myReaction).toBe("😂");
+    expect(rows[0].reactions).toHaveLength(1);
+    await client(carol).chat.react.mutate({
+      id: m.id,
+      reaction: "😂",
+      remove: true,
+    });
+    rows = await client(carol).chat.messages.query({
+      threadId: t.id,
+      pinnedOnly: true,
+    });
+    expect(rows[0].myReaction).toBeNull();
+    expect(rows[0].reactions).toHaveLength(0);
+    await client(carol).features.block.mutate({ userId: bob, block: true });
+    expect(
+      await client(carol).chat.messages.query({
+        threadId: t.id,
+        pinnedOnly: true,
+      })
+    ).toEqual([]);
+    await expect(
+      client(carol).chat.react.mutate({ id: m.id, reaction: "❤️" })
+    ).rejects.toThrow();
+    await client(bob).chat.update.mutate({ id: m.id, action: "delete" });
+    expect(
+      await client(alice).chat.messages.query({
+        threadId: t.id,
+        pinnedOnly: true,
+      })
+    ).toEqual([]);
+  });
   it("requires acceptance, hides pre-join history and validates reply transport", async () => {
     await client(bob).social.follow.mutate({ userId: alice, follow: true });
     const t = await client(alice).chat.create.mutate({

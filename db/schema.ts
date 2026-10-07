@@ -480,7 +480,11 @@ export const chatMessages = mysqlTable(
     deliverAt: timestamp("deliverAt").notNull().defaultNow(),
     createdAt: created(),
   },
-  t => [index("chat_history").on(t.threadId, t.deliverAt, t.id)]
+  t => [
+    index("chat_history").on(t.threadId, t.deliverAt, t.id),
+    index("chat_history_cursor").on(t.threadId, t.id),
+    index("chat_pins").on(t.threadId, t.pinned, t.id),
+  ]
 );
 export const chatReactions = mysqlTable(
   "chat_reactions",

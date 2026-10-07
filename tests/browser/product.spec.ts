@@ -388,6 +388,133 @@ test("collections, Notes, group invites, replies and edits work at 320px", async
   });
   await bobContext.close();
 });
+test("history pages, old pins and reaction replacement work on a narrow screen", async ({
+  page,
+  context,
+}) => {
+  await signIn(context);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto("/groups");
+  await page
+    .getByRole("button", { name: "History fixture group", exact: true })
+    .click();
+  await expect(page.locator("article")).toHaveCount(50);
+  await expect(
+    page.getByText("History message 75", { exact: true })
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Older messages", exact: true })
+    .click();
+  await expect(
+    page.getByText("History message 25", { exact: true })
+  ).toBeVisible();
+  await expect(page.locator("article")).toHaveCount(50);
+  await page
+    .getByRole("button", { name: "Older messages", exact: true })
+    .click();
+  await expect(page.locator("article")).toHaveCount(25);
+  await expect(
+    page.getByRole("button", { name: "Older messages", exact: true })
+  ).toBeDisabled();
+  await noOverflow(page);
+  await page
+    .getByRole("button", { name: "Latest messages", exact: true })
+    .click();
+  await expect(
+    page.getByText("History message 75", { exact: true })
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Pinned messages", exact: true })
+    .click();
+  await expect(page.locator("article")).toHaveCount(1);
+  await expect(page.getByText(/^Old pinned message /)).toBeVisible();
+  await page
+    .getByRole("button", { name: "React to message", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Fire reaction", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Fire reaction, 1", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await page
+    .getByRole("button", { name: "Laugh reaction", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Laugh reaction, 1", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Fire reaction", exact: true })
+  ).toHaveAttribute("aria-pressed", "false");
+  await page
+    .getByRole("button", { name: "Laugh reaction, 1", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Laugh reaction", exact: true })
+  ).toHaveAttribute("aria-pressed", "false");
+  await noOverflow(page);
+  await page.screenshot({
+    path: "test-results/history-pins-mobile.png",
+    fullPage: true,
+  });
+});
+test("switching conversations clears schedules, edits and destructive confirmation", async ({
+  page,
+  context,
+}) => {
+  await signIn(context);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto("/groups");
+  await page
+    .getByRole("button", { name: "History fixture group", exact: true })
+    .click();
+  await page.getByLabel("Group message").fill("Private draft");
+  await page.getByLabel("Schedule message").fill("2026-10-20T12:00");
+  await page
+    .getByRole("button", { name: "Delete channel", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+  await page.getByLabel("Edit message").fill("Edit draft");
+  await page
+    .getByRole("button", { name: "Second conversation group", exact: true })
+    .click();
+  await expect(page.getByLabel("Group message")).toHaveValue("");
+  await expect(page.getByLabel("Schedule message")).toHaveValue("");
+  await expect(
+    page.getByRole("button", { name: "Confirm delete channel", exact: true })
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "History fixture group", exact: true })
+    .click();
+  await expect(page.getByLabel("Edit message")).toHaveCount(0);
+  await noOverflow(page);
+});
+test("broadcast readers see reactions without a misleading send form", async ({
+  page,
+  context,
+}) => {
+  await signIn(context, "bob");
+  await page.goto("/groups");
+  await page
+    .getByRole("button", { name: "Broadcast fixture broadcast", exact: true })
+    .click();
+  await expect(
+    page.getByText("An owner announcement", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByLabel("Group message")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Pin", exact: true })
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "React to message", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Applause reaction", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Applause reaction, 1", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+});
 test("messaging, read state and logout work through the UI", async ({
   page,
   context,

@@ -211,7 +211,13 @@ export const chatRouter = createRouter({
       };
     }),
   messages: authedQuery
-    .input(z.object({ threadId: id, before: id.optional() }))
+    .input(
+      z.object({
+        threadId: id,
+        before: id.optional(),
+        pinnedOnly: z.boolean().default(false),
+      })
+    )
     .query(async ({ ctx, input }) => {
       const m = await member(input.threadId, ctx.user.id);
       const rows = await getDb()
@@ -223,15 +229,18 @@ export const chatRouter = createRouter({
             isNull(s.chatMessages.deletedAt),
             unblocked(ctx.user.id, s.chatMessages.senderId),
             gt(s.chatMessages.id, m.member.historyAfterId),
-            or(
-              lte(s.chatMessages.deliverAt, new Date()),
-              eq(s.chatMessages.senderId, ctx.user.id)
-            ),
+            input.pinnedOnly ? eq(s.chatMessages.pinned, true) : undefined,
+            input.pinnedOnly
+              ? lte(s.chatMessages.deliverAt, new Date())
+              : or(
+                  lte(s.chatMessages.deliverAt, new Date()),
+                  eq(s.chatMessages.senderId, ctx.user.id)
+                ),
             input.before ? sql`${s.chatMessages.id}<${input.before}` : undefined
           )
         )
         .orderBy(desc(s.chatMessages.id))
-        .limit(50);
+        .limit(input.pinnedOnly ? 3 : 50);
       const ids = rows.map(r => r.id);
       const allReactions = ids.length
         ? await getDb()
@@ -284,6 +293,8 @@ export const chatRouter = createRouter({
             deliverAt: row.deliverAt,
             createdAt: row.createdAt,
             reactions,
+            myReaction:
+              reactions.find(r => r.userId === ctx.user.id)?.reaction ?? null,
             readBy: receipts.filter(
               r => r.messageId === row.id && r.userId !== row.senderId
             ).length,
@@ -551,6 +562,40 @@ export const chatRouter = createRouter({
             delivered.map(row => ({ messageId: row.id, userId: ctx.user.id }))
           )
           .onDuplicateKeyUpdate({ set: { userId: ctx.user.id } });
+      return { ok: true };
+    }),
+  readDisplayed: authedQuery
+    .input(z.object({ threadId: id, messageIds: z.array(id).min(1).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const m = await member(input.threadId, ctx.user.id);
+      const ids = [...new Set(input.messageIds)];
+      const rows = await getDb()
+        .select({ id: s.chatMessages.id })
+        .from(s.chatMessages)
+        .where(
+          and(
+            eq(s.chatMessages.threadId, input.threadId),
+            inArray(s.chatMessages.id, ids),
+            gt(s.chatMessages.id, m.member.historyAfterId),
+            lte(s.chatMessages.deliverAt, new Date()),
+            isNull(s.chatMessages.deletedAt),
+            unblocked(ctx.user.id, s.chatMessages.senderId)
+          )
+        );
+      if (rows.length !== ids.length)
+        throw new TRPCError({ code: "NOT_FOUND" });
+      await getDb().transaction(async tx => {
+        await tx
+          .insert(s.chatReceipts)
+          .values(rows.map(row => ({ messageId: row.id, userId: ctx.user.id })))
+          .onDuplicateKeyUpdate({ set: { userId: ctx.user.id } });
+        await tx
+          .update(s.chatMembers)
+          .set({
+            lastReadId: sql`GREATEST(${s.chatMembers.lastReadId}, ${Math.max(...ids)})`,
+          })
+          .where(eq(s.chatMembers.id, m.member.id));
+      });
       return { ok: true };
     }),
   invite: authedQuery
