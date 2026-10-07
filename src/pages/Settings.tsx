@@ -58,7 +58,7 @@ export default function Settings() {
   });
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto p-4 sm:p-8 space-y-6">
+      <div className="max-w-2xl mx-auto p-4 sm:p-8 space-y-6 page-enter">
         <h1 className="text-2xl font-semibold">Settings & security</h1>
         <Preferences />
         <section className="border rounded-xl p-4 space-y-3">
@@ -66,6 +66,7 @@ export default function Settings() {
           <label className="flex items-start gap-3 text-sm">
             <input
               type="checkbox"
+              aria-label="Private account"
               className="mt-1"
               checked={privacyDraft ?? profile.data?.isPrivate ?? false}
               disabled={
