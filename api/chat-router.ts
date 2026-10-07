@@ -9,7 +9,10 @@ import { requireUnblocked, unblocked } from "./services/access";
 import { claimUploads } from "./services/uploads";
 import { digest, randomToken } from "./auth/security";
 import { storage } from "./services/storage";
-import { notifyTextMentions } from "./services/mentions";
+import {
+  notifyGroupMessage,
+  notifyTextMentions,
+} from "./services/mentions";
 const id = z.number().int().positive();
 const handle = z
   .string()
@@ -404,12 +407,17 @@ export const chatRouter = createRouter({
         const messageId = Number(r[0].insertId);
         return { id: messageId };
       }).then(async result => {
-        if (!input.deliverAt || input.deliverAt <= new Date())
+        if (!input.deliverAt || input.deliverAt <= new Date()) {
+          await notifyGroupMessage({
+            actorId: ctx.user.id,
+            threadId: input.threadId,
+          });
           await notifyTextMentions({
             actorId: ctx.user.id,
             text: input.text,
             threadId: input.threadId,
           });
+        }
         return result;
       });
     }),
