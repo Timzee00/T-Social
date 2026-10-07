@@ -8,7 +8,7 @@ if [ ! -d /var/lib/mysql/mysql ]; then
   mariadb-install-db --user=mysql --datadir=/var/lib/mysql --skip-test-db >/dev/null
 fi
 
-mariadbd --user=mysql --datadir=/var/lib/mysql --bind-address=127.0.0.1 --port=3306 &
+mariadbd --user=mysql --datadir=/var/lib/mysql --skip-networking --socket=/run/mysqld/mysqld.sock &
 DB_PID=$!
 
 cleanup() {
@@ -28,9 +28,9 @@ done
 
 mariadb --socket=/run/mysqld/mysqld.sock -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS t_social CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'tsocial'@'127.0.0.1';
-ALTER USER 'tsocial'@'127.0.0.1' IDENTIFIED BY '';
-GRANT ALL PRIVILEGES ON t_social.* TO 'tsocial'@'127.0.0.1';
+CREATE USER IF NOT EXISTS 'tsocial'@'localhost';
+ALTER USER 'tsocial'@'localhost' IDENTIFIED BY '';
+GRANT ALL PRIVILEGES ON t_social.* TO 'tsocial'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 
