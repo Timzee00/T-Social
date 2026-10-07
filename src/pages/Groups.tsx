@@ -617,7 +617,7 @@ export default function Groups() {
                             p => p.userId === m.senderId
                           )?.memberTag
                             ? ` · ${
-                                details.data.members.find(
+                                details.data?.members.find(
                                   p => p.userId === m.senderId
                                 )?.memberTag
                               }`
