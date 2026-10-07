@@ -82,7 +82,7 @@ export async function notifyTextMentions(input: {
                 WHERE cm_mention.threadId=${input.threadId}
                   AND cm_mention.userId=${s.profiles.userId}
                   AND cm_mention.accepted=1
-                  AND cm_mention.notifications <> 'muted'
+                  AND cm_mention.notifications = 'mentions'
               )`
             : undefined
         )
@@ -163,4 +163,34 @@ export async function notifyTextMentions(input: {
         }))
       );
   }
+}
+
+
+export async function notifyGroupMessage(input: {
+  actorId: number;
+  threadId: number;
+}) {
+  const db = getDb();
+  const members = await db
+    .select({ userId: s.chatMembers.userId })
+    .from(s.chatMembers)
+    .where(
+      and(
+        eq(s.chatMembers.threadId, input.threadId),
+        eq(s.chatMembers.accepted, true),
+        eq(s.chatMembers.notifications, "all"),
+        sql`${s.chatMembers.userId} <> ${input.actorId}`,
+        unblocked(input.actorId, s.chatMembers.userId)
+      )
+    )
+    .limit(50);
+  if (!members.length) return;
+  await db.insert(s.notifications).values(
+    members.map(member => ({
+      userId: member.userId,
+      actorId: input.actorId,
+      kind: "group_message" as const,
+      threadId: input.threadId,
+    }))
+  );
 }
