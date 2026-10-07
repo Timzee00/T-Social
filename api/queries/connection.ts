@@ -10,6 +10,7 @@ export function getDb(): MySql2Database<typeof schema> {
   if (!pool) {
     const rawPool = mysql.createPool({
       uri: env.databaseUrl,
+      socketPath: process.env.DATABASE_SOCKET || undefined,
       connectionLimit: 10,
       enableKeepAlive: true,
       timezone: "Z",
