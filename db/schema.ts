@@ -447,7 +447,6 @@ export const preferences = mysqlTable("preferences", {
     .notNull()
     .default("followers"),
   readReceipts: boolean("readReceipts").notNull().default(true),
-  activityStatus: boolean("activityStatus").notNull().default(true),
 });
 export const drafts = mysqlTable("drafts", {
   id: id(),
