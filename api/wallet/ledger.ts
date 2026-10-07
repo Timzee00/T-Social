@@ -171,12 +171,11 @@ export async function walletBalances(userId: number) {
     .where(
       and(
         eq(schema.walletAccounts.userId, userId),
-        inArray(schema.walletAccounts.currency, ["COIN", "NGN"])
+        eq(schema.walletAccounts.currency, "COIN")
       )
     );
   return {
-    coins: rows.find(a => a.currency === "COIN")?.balance ?? 0,
-    cashKobo: rows.find(a => a.currency === "NGN")?.balance ?? 0,
+    coins: rows[0]?.balance ?? 0,
     frozen: rows.some(a => a.frozen),
   };
 }
