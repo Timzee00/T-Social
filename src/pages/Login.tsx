@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-type Availability = { providers: string[]; phone: boolean };
+type Availability = { providers: string[]; phone: boolean; staging?: boolean };
 const labels: Record<string, string> = {
   google: "Continue with Google",
   facebook: "Continue with Facebook",
@@ -93,6 +93,22 @@ export default function Login() {
               {labels[provider]}
             </Button>
           ))}
+          {availability?.staging && (
+            <Button
+              variant="outline"
+              className="w-full h-11 text-sm"
+              disabled={busy}
+              onClick={() =>
+                act(async () => {
+                  await send("staging", {});
+                  await refresh();
+                  navigate("/");
+                })
+              }
+            >
+              Enter live demo
+            </Button>
+          )}
           {availability?.phone && (
             <form
               className="space-y-3 border-t pt-5"
@@ -160,7 +176,8 @@ export default function Login() {
           )}
           {availability &&
             !availability.providers.length &&
-            !availability.phone && (
+            !availability.phone &&
+            !availability.staging && (
               <p
                 role="status"
                 className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600"
