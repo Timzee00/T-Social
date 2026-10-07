@@ -314,7 +314,7 @@ test("wallet welcome reward survives reload and cannot be claimed twice", async 
   await page.reload();
   await expect(page.getByText("100", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("No cash signup bonus is promised.", { exact: false })
+    page.getByText("T Coins have no cash value.", { exact: false })
   ).toBeVisible();
   await noOverflow(page);
   await page.screenshot({
