@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as s from "../../db/schema";
 import { getDb } from "../queries/connection";
-import { unblocked } from "./access";
+import { unblocked, visibleStory } from "./access";
 
 const groupPattern = /@group:([a-z0-9][a-z0-9_-]{0,39})/gi;
 const userPattern = /(^|[^A-Za-z0-9_@])@([A-Za-z0-9_]{1,50})/g;
@@ -23,6 +23,16 @@ export function mentionedUsers(text: string) {
       )
     ),
   ].slice(0, 20);
+}
+
+async function canSeeStory(storyId: number | undefined, userId: number) {
+  if (!storyId) return true;
+  const [story] = await getDb()
+    .select({ id: s.stories.id })
+    .from(s.stories)
+    .where(and(eq(s.stories.id, storyId), visibleStory(userId)))
+    .limit(1);
+  return !!story;
 }
 
 async function mentionAllowed(targetId: number, actorId: number) {
@@ -72,6 +82,7 @@ export async function notifyTextMentions(input: {
                 WHERE cm_mention.threadId=${input.threadId}
                   AND cm_mention.userId=${s.profiles.userId}
                   AND cm_mention.accepted=1
+                  AND cm_mention.notifications <> 'muted'
               )`
             : undefined
         )
@@ -81,7 +92,8 @@ export async function notifyTextMentions(input: {
     for (const target of targets) {
       if (
         target.userId !== input.actorId &&
-        (await mentionAllowed(target.userId, input.actorId))
+        (await mentionAllowed(target.userId, input.actorId)) &&
+        (await canSeeStory(input.storyId, target.userId))
       )
         allowed.push(target.userId);
     }
@@ -135,7 +147,8 @@ export async function notifyTextMentions(input: {
     for (const member of members) {
       if (
         member.notifications !== "muted" &&
-        (await mentionAllowed(member.userId, input.actorId))
+        (await mentionAllowed(member.userId, input.actorId)) &&
+        (await canSeeStory(input.storyId, member.userId))
       )
         allowed.push(member.userId);
     }
