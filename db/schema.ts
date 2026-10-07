@@ -235,6 +235,7 @@ export const notifications = mysqlTable(
       "request",
       "mention",
       "group_mention",
+      "group_message",
     ]).notNull(),
     postId: bigint("postId", { mode: "number", unsigned: true }).references(
       () => posts.id,
