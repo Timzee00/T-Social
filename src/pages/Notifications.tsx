@@ -18,6 +18,7 @@ export default function Notifications() {
     request: "requested to follow you",
     mention: "mentioned you in a status or conversation",
     group_mention: "mentioned a group you belong to",
+    group_message: "sent a message to your group",
   };
   return (
     <AppLayout>
