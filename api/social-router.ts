@@ -1,5 +1,6 @@
 import { rankPosts } from "./services/recommendations";
 import { hashtags } from "./services/hashtags";
+import { notifyTextMentions } from "./services/mentions";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, ne, sql, inArray, gt, lt, isNull } from "drizzle-orm";
@@ -739,6 +740,7 @@ export const socialRouter = createRouter({
           viewed: boolean;
           contentType: string;
           closeFriends: boolean;
+          caption: string | null;
         }[];
       }
     >();
@@ -758,6 +760,7 @@ export const socialRouter = createRouter({
         id: s.id,
         contentType: s.contentType,
         closeFriends: s.closeFriends,
+        caption: s.caption,
         viewed: viewedIds.has(s.id) || s.userId === ctx.user.id,
         url: urlMap.get(s.imageKey) ?? null,
         createdAt: s.createdAt,
@@ -771,25 +774,34 @@ export const socialRouter = createRouter({
       z.object({
         uploadId: z.string().length(43),
         closeFriends: z.boolean().default(false),
+        caption: z.string().trim().max(500).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProfile(ctx.user.id, ctx.user.name);
-      await getDb().transaction(async tx => {
+      const storyId = await getDb().transaction(async tx => {
         const [media] = await claimUploads(
           tx,
           [input.uploadId],
           ctx.user.id,
           "story"
         );
-        await tx.insert(stories).values({
+        const [row] = await tx.insert(stories).values({
           userId: ctx.user.id,
           imageKey: media.key,
           contentType: media.contentType,
           closeFriends: input.closeFriends,
+          caption: input.caption || null,
         });
+        return Number(row.insertId);
       });
-      return { ok: true };
+      if (input.caption)
+        await notifyTextMentions({
+          actorId: ctx.user.id,
+          text: input.caption,
+          storyId,
+        });
+      return { ok: true, id: storyId };
     }),
 
   searchUsers: authedQuery
