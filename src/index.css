@@ -165,3 +165,161 @@
 .dark .border-t {
   border-color: #404040;
 }
+
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes soft-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@layer components {
+  .page-enter {
+    animation: page-enter 280ms ease-out both;
+  }
+  .surface-card {
+    @apply rounded-2xl border bg-white p-4 shadow-sm;
+    transition:
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease;
+  }
+  .interactive-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.08);
+  }
+  .setting-row {
+    @apply flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border p-3;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease;
+  }
+  .setting-row:hover {
+    transform: translateY(-1px);
+    @apply bg-neutral-50;
+  }
+  .control-select {
+    @apply min-h-10 rounded-lg border bg-white px-3 py-2 text-sm;
+  }
+  .toggle-control {
+    @apply h-5 w-5 shrink-0 accent-neutral-900;
+  }
+  .mention-link {
+    @apply font-semibold underline decoration-transparent underline-offset-2;
+    transition:
+      color 160ms ease,
+      text-decoration-color 160ms ease;
+  }
+  .mention-link:hover {
+    @apply text-rose-500 decoration-current;
+  }
+  .chip-link {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-neutral-50;
+    transition:
+      transform 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease;
+  }
+  .chip-link:active {
+    transform: scale(0.97);
+  }
+  .person-choice {
+    @apply flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left;
+    transition:
+      transform 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease;
+  }
+  .person-choice:hover {
+    @apply bg-neutral-50;
+    transform: translateY(-1px);
+  }
+  .conversation-choice {
+    @apply w-full rounded-xl p-3 text-left;
+    transition:
+      transform 160ms ease,
+      background-color 160ms ease;
+  }
+  .conversation-choice:hover {
+    @apply bg-neutral-50;
+    transform: translateX(2px);
+  }
+  .conversation-choice-active {
+    @apply bg-neutral-100 font-medium;
+  }
+  .message-bubble {
+    @apply max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm break-words;
+    animation: soft-pop 180ms ease-out both;
+  }
+  .message-bubble-mine {
+    @apply bg-neutral-900 text-white;
+  }
+  .message-bubble-other {
+    @apply bg-neutral-100;
+  }
+  .reply-preview {
+    @apply mb-2 flex items-start gap-1.5 rounded-lg border-l-2 pl-2 text-[11px] opacity-70;
+  }
+  .reply-compose {
+    @apply flex items-center justify-between gap-3 rounded-lg bg-neutral-100 px-3 py-2 text-xs;
+    animation: soft-pop 160ms ease-out both;
+  }
+  .status-caption {
+    @apply rounded-xl bg-neutral-50 p-3 text-sm;
+    animation: soft-pop 180ms ease-out both;
+  }
+  .wallet-hero {
+    @apply flex items-center justify-between gap-4 overflow-hidden rounded-3xl border bg-neutral-900 p-6 text-white shadow-sm;
+    background-image:
+      radial-gradient(circle at 85% 20%, rgb(244 63 94 / 0.35), transparent 34%),
+      radial-gradient(circle at 10% 100%, rgb(255 255 255 / 0.12), transparent 38%);
+  }
+  .nav-action,
+  .icon-button {
+    transition:
+      transform 150ms ease,
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .nav-action:active,
+  .icon-button:active {
+    transform: scale(0.96);
+  }
+}
+
+.dark .surface-card,
+.dark .control-select {
+  background-color: #171717;
+}
+.dark .setting-row:hover,
+.dark .person-choice:hover,
+.dark .chip-link:hover,
+.dark .conversation-choice:hover,
+.dark .status-caption,
+.dark .reply-compose {
+  background-color: #262626;
+}
+.dark .message-bubble-mine {
+  background-color: #f5f5f5;
+  color: #171717;
+}
+.dark .message-bubble-other {
+  background-color: #262626;
+}

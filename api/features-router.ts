@@ -411,6 +411,8 @@ export const featuresRouter = createRouter({
         id: notifications.id,
         kind: notifications.kind,
         postId: notifications.postId,
+        storyId: notifications.storyId,
+        threadId: notifications.threadId,
         username: profiles.username,
         readAt: notifications.readAt,
         createdAt: notifications.createdAt,
@@ -437,6 +439,11 @@ export const featuresRouter = createRouter({
     .input(z.object({ userId: id, before: id.optional() }))
     .query(async ({ ctx, input }) => {
       await requireUnblocked(ctx.user.id, input.userId);
+      const [peerPrefs] = await getDb()
+        .select({ readReceipts: preferences.readReceipts })
+        .from(preferences)
+        .where(eq(preferences.userId, input.userId))
+        .limit(1);
       const rows = await getDb()
         .select()
         .from(messages)
@@ -452,17 +459,29 @@ export const featuresRouter = createRouter({
                 eq(messages.senderId, input.userId)
               )
             ),
+            isNull(messages.deletedAt),
             input.before ? lt(messages.id, input.before) : undefined
           )
         )
         .orderBy(desc(messages.id))
         .limit(50);
-      return rows
-        .reverse()
-        .map(row => ({ ...row, isMine: row.senderId === ctx.user.id }));
+      return rows.reverse().map(row => ({
+        ...row,
+        readAt:
+          row.senderId === ctx.user.id && peerPrefs?.readReceipts === false
+            ? null
+            : row.readAt,
+        isMine: row.senderId === ctx.user.id,
+      }));
     }),
   sendMessage: authedQuery
-    .input(z.object({ userId: id, text: z.string().trim().min(1).max(2000) }))
+    .input(
+      z.object({
+        userId: id,
+        text: z.string().trim().min(1).max(2000),
+        replyId: id.optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       if (input.userId === ctx.user.id)
         throw new TRPCError({ code: "BAD_REQUEST" });
@@ -500,10 +519,38 @@ export const featuresRouter = createRouter({
           code: "FORBIDDEN",
           message: "This person must follow you before you can message them",
         });
+      if (input.replyId) {
+        const [reply] = await getDb()
+          .select({ id: messages.id })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.id, input.replyId),
+              isNull(messages.deletedAt),
+              or(
+                and(
+                  eq(messages.senderId, ctx.user.id),
+                  eq(messages.recipientId, input.userId)
+                ),
+                and(
+                  eq(messages.recipientId, ctx.user.id),
+                  eq(messages.senderId, input.userId)
+                )
+              )
+            )
+          )
+          .limit(1);
+        if (!reply)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Reply target is unavailable",
+          });
+      }
       const [row] = await getDb().insert(messages).values({
         senderId: ctx.user.id,
         recipientId: input.userId,
         text: input.text,
+        replyId: input.replyId,
       });
       return { id: row.insertId };
     }),
@@ -512,9 +559,12 @@ export const featuresRouter = createRouter({
       .select()
       .from(messages)
       .where(
-        or(
-          eq(messages.senderId, ctx.user.id),
-          eq(messages.recipientId, ctx.user.id)
+        and(
+          isNull(messages.deletedAt),
+          or(
+            eq(messages.senderId, ctx.user.id),
+            eq(messages.recipientId, ctx.user.id)
+          )
         )
       )
       .orderBy(desc(messages.id))
@@ -558,13 +608,44 @@ export const featuresRouter = createRouter({
         );
       return { ok: true };
     }),
+  editMessage: authedQuery
+    .input(z.object({ id, text: z.string().trim().min(1).max(2000) }))
+    .mutation(async ({ ctx, input }) => {
+      const [message] = await getDb()
+        .select()
+        .from(messages)
+        .where(
+          and(
+            eq(messages.id, input.id),
+            eq(messages.senderId, ctx.user.id),
+            isNull(messages.deletedAt)
+          )
+        )
+        .limit(1);
+      if (!message) throw new TRPCError({ code: "NOT_FOUND" });
+      if (Date.now() - message.createdAt.getTime() > 15 * 60 * 1000)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Messages can be edited for 15 minutes",
+        });
+      await getDb()
+        .update(messages)
+        .set({ text: input.text, editedAt: new Date() })
+        .where(eq(messages.id, input.id));
+      return { ok: true };
+    }),
   deleteMessage: authedQuery
     .input(z.object({ id }))
     .mutation(async ({ ctx, input }) => {
       await getDb()
-        .delete(messages)
+        .update(messages)
+        .set({ text: "", deletedAt: new Date() })
         .where(
-          and(eq(messages.id, input.id), eq(messages.senderId, ctx.user.id))
+          and(
+            eq(messages.id, input.id),
+            eq(messages.senderId, ctx.user.id),
+            isNull(messages.deletedAt)
+          )
         );
       return { ok: true };
     }),

@@ -5,6 +5,7 @@ import { migrate } from "drizzle-orm/mysql2/migrator";
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const pool = mysql.createPool({
   uri: process.env.DATABASE_URL,
+  socketPath: process.env.DATABASE_SOCKET || undefined,
   connectionLimit: 1,
   timezone: "Z",
 });

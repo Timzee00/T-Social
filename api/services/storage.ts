@@ -3,10 +3,25 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "node:crypto";
 let client: S3Client | undefined;
+let bucketReady: Promise<void> | undefined;
+
+async function ensureBucket(client: S3Client, bucket: string) {
+  bucketReady ??= (async () => {
+    try {
+      await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    } catch {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    }
+  })();
+  return bucketReady;
+}
+
 function config() {
   const bucket = process.env.S3_BUCKET;
   if (!bucket) throw new Error("S3_BUCKET is not configured");
@@ -32,6 +47,7 @@ export const storage = {
     contentType: string;
   }) {
     const { client, bucket } = config();
+    await ensureBucket(client, bucket);
     const key = `${input.fileName.replace(/\.[^.]+$/, "")}-${randomUUID()}.${input.fileName.split(".").at(-1)}`;
     await client.send(
       new PutObjectCommand({

@@ -176,8 +176,8 @@ test("private account hides posts until an accepted follow request", async ({
 }) => {
   await signIn(context, "alice");
   await page.goto("/settings");
-  await page.getByRole("checkbox").check();
-  await expect(page.getByRole("checkbox")).toBeEnabled();
+  await page.getByLabel("Private account").check();
+  await expect(page.getByLabel("Private account")).toBeEnabled();
   const bobContext = await browser.newContext();
   await signIn(bobContext, "bob");
   const bobPage = await bobContext.newPage();
@@ -195,7 +195,7 @@ test("private account hides posts until an accepted follow request", async ({
   await expect(
     bobPage.getByRole("button", { name: /Open post by/ }).first()
   ).toBeVisible();
-  await page.getByRole("checkbox").uncheck();
+  await page.getByLabel("Private account").uncheck();
   await expect(page.getByRole("checkbox")).toBeEnabled();
   await bobContext.close();
 });
@@ -314,7 +314,7 @@ test("wallet welcome reward survives reload and cannot be claimed twice", async 
   await page.reload();
   await expect(page.getByText("100", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("No cash signup bonus is promised.", { exact: false })
+    page.getByText("T Coins have no cash value.", { exact: false })
   ).toBeVisible();
   await noOverflow(page);
   await page.screenshot({

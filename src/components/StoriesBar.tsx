@@ -6,6 +6,8 @@ import { fileToUpload } from "@/lib/upload";
 import { Avatar } from "./Avatar";
 import { Modal } from "./Modal";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { MentionText } from "./MentionText";
 export function StoriesBar({ myUsername }: { myUsername?: string }) {
   const utils = trpc.useUtils();
   const groups = trpc.social.stories.useQuery();
@@ -13,6 +15,7 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
   const [id, setId] = useState<number | null>(null),
     [uploading, setUploading] = useState(false),
     [closeFriends, setCloseFriends] = useState(false),
+    [caption, setCaption] = useState(""),
     [reply, setReply] = useState("");
   const reactions = trpc.community.storyReaction.useMutation({
     onSuccess: () => setReply(""),
@@ -53,14 +56,23 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
   }, [id, markView]);
   return (
     <>
-      <label className="flex items-center gap-2 px-4 pt-3 text-xs text-neutral-500">
-        <input
-          type="checkbox"
-          checked={closeFriends}
-          onChange={e => setCloseFriends(e.target.checked)}
+      <div className="px-4 pt-3 grid gap-2">
+        <Input
+          aria-label="Story status"
+          maxLength={500}
+          value={caption}
+          onChange={e => setCaption(e.target.value)}
+          placeholder="Add a status… use @username or @group:handle"
         />
-        New story for Close Friends only
-      </label>
+        <label className="flex items-center gap-2 text-xs text-neutral-500">
+          <input
+            type="checkbox"
+            checked={closeFriends}
+            onChange={e => setCloseFriends(e.target.checked)}
+          />
+          New story for Close Friends only
+        </label>
+      </div>
       <div className="flex gap-4 overflow-x-auto p-4 scrollbar-none">
         <button
           className="flex flex-col items-center gap-2 shrink-0"
@@ -116,7 +128,9 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
             await add.mutateAsync({
               ...(await fileToUpload(picked, "story")),
               closeFriends,
+              caption: caption.trim() || undefined,
             });
+            setCaption("");
           } catch (error) {
             toast.error(
               error instanceof Error ? error.message : "Upload failed"
@@ -150,6 +164,11 @@ export function StoriesBar({ myUsername }: { myUsername?: string }) {
                 alt={`${current.username}'s story`}
                 className="max-h-[65dvh] w-full object-contain rounded-lg bg-neutral-50"
               />
+            )}
+            {current.caption && (
+              <p className="status-caption whitespace-pre-wrap break-words">
+                <MentionText text={current.caption} />
+              </p>
             )}
             {current.closeFriends && (
               <p className="text-xs text-emerald-700">Close Friends</p>

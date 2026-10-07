@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { AppLayout } from "@/components/AppLayout";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageReactions } from "@/components/MessageReactions";
 import { fileToUpload } from "@/lib/upload";
+import { MentionText } from "@/components/MentionText";
 export default function Groups() {
   const { user } = useAuth();
   const activeThread = useRef<number | null>(null);
@@ -36,7 +37,15 @@ export default function Groups() {
     [invite, setInvite] = useState(""),
     [editing, setEditing] = useState<number | null>(null),
     [editText, setEdit] = useState(""),
-    [translated, setTranslated] = useState<Record<number, string>>({});
+    [translated, setTranslated] = useState<Record<number, string>>({}),
+    [settingsThread, setSettingsThread] = useState<number | null>(null),
+    [memberTag, setMemberTag] = useState(""),
+    [groupNotifications, setGroupNotifications] = useState<
+      "all" | "mentions" | "muted"
+    >("all"),
+    [groupTitle, setGroupTitle] = useState(""),
+    [groupDescription, setGroupDescription] = useState(""),
+    [groupHandle, setGroupHandle] = useState("");
   const attachment = useRef<HTMLInputElement>(null),
     inbox = trpc.chat.inbox.useQuery(undefined, { refetchInterval: 15000 });
   const chosen = inbox.data?.find(t => t.id === selected),
@@ -69,6 +78,7 @@ export default function Groups() {
     setEditing(null);
     setEdit("");
     setConfirmDelete(false);
+    setSettingsThread(null);
     setHistory([]);
     setShowPins(false);
   }
@@ -127,6 +137,18 @@ export default function Groups() {
         refresh();
       },
     }),
+    saveMembership = trpc.chat.updateMembership.useMutation({
+      onSuccess: () => {
+        toast.success("Your group settings were saved");
+        refresh();
+      },
+    }),
+    saveThread = trpc.chat.updateThread.useMutation({
+      onSuccess: () => {
+        toast.success("Group details updated");
+        refresh();
+      },
+    }),
     read = trpc.chat.readDisplayed.useMutation(),
     translate = trpc.chat.translate.useMutation({
       onMutate: () => ({ version: conversationVersion.current }),
@@ -135,6 +157,30 @@ export default function Groups() {
           setTranslated(t => ({ ...t, [input.id]: r.translatedText }));
       },
     });
+  useEffect(() => {
+    if (!inbox.data?.length || selected) return;
+    const requestedId = Number(params.get("thread"));
+    const requestedHandle = params.get("group")?.toLowerCase();
+    const target = inbox.data.find(
+      thread =>
+        (Number.isSafeInteger(requestedId) &&
+          requestedId > 0 &&
+          thread.id === requestedId) ||
+        (!!requestedHandle && thread.handle === requestedHandle)
+    );
+    if (target) selectConversation(target.id);
+  }, [inbox.data, params, selected]);
+
+  useEffect(() => {
+    if (!selected || !details.data || settingsThread === selected) return;
+    setSettingsThread(selected);
+    setMemberTag(details.data.membership.memberTag || "");
+    setGroupNotifications(details.data.membership.notifications);
+    setGroupTitle(details.data.thread.title);
+    setGroupDescription(details.data.thread.description || "");
+    setGroupHandle(details.data.thread.handle || "");
+  }, [details.data, selected, settingsThread]);
+
   const markRead = read.mutate;
   const deliveredKey =
     displayed.data
@@ -156,7 +202,7 @@ export default function Groups() {
   }, [enabled, selected, deliveredKey, displayed.isError, markRead]);
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-4">
+      <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-4 page-enter">
         <h1 className="text-xl font-semibold">Groups & channels</h1>
         <p className="text-sm text-neutral-500">
           Up to 50 members. New members see messages sent after joining.
@@ -265,9 +311,19 @@ export default function Groups() {
             ) : (
               <>
                 <header className="border-b p-3 space-y-2">
-                  <p className="text-sm font-semibold truncate">
-                    {chosen.title}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">
+                      {chosen.title}
+                    </p>
+                    {details.data?.thread.handle && (
+                      <p className="text-xs text-neutral-500 truncate">
+                        @group:{details.data.thread.handle}
+                        {details.data.thread.description
+                          ? ` · ${details.data.thread.description}`
+                          : ""}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex gap-2 flex-wrap">
                     {chosen.ownerId === user?.id ? (
                       <Button
@@ -339,6 +395,147 @@ export default function Groups() {
                       onFocus={e => e.currentTarget.select()}
                     />
                   )}
+                  <details className="rounded-xl border p-3 text-sm">
+                    <summary className="cursor-pointer font-medium">
+                      Group & personal settings
+                    </summary>
+                    <div className="grid gap-4 mt-4">
+                      <form
+                        className="grid sm:grid-cols-[1fr_180px_auto] gap-2 items-end"
+                        onSubmit={e => {
+                          e.preventDefault();
+                          saveMembership.mutate({
+                            threadId: selected,
+                            memberTag,
+                            notifications: groupNotifications,
+                          });
+                        }}
+                      >
+                        <label className="grid gap-1 text-xs">
+                          Your member tag
+                          <Input
+                            aria-label="Your member tag"
+                            maxLength={32}
+                            value={memberTag}
+                            onChange={e => setMemberTag(e.target.value)}
+                            placeholder="e.g. Designer"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs">
+                          Notifications
+                          <select
+                            aria-label="Group notifications"
+                            className="control-select"
+                            value={groupNotifications}
+                            onChange={e =>
+                              setGroupNotifications(
+                                e.target.value as
+                                  | "all"
+                                  | "mentions"
+                                  | "muted"
+                              )
+                            }
+                          >
+                            <option value="all">All messages</option>
+                            <option value="mentions">Mentions only</option>
+                            <option value="muted">Muted</option>
+                          </select>
+                        </label>
+                        <Button size="sm" disabled={saveMembership.isPending}>
+                          Save my settings
+                        </Button>
+                      </form>
+
+                      {chosen.ownerId === user?.id && (
+                        <form
+                          className="grid gap-2 rounded-xl bg-neutral-50 p-3"
+                          onSubmit={e => {
+                            e.preventDefault();
+                            saveThread.mutate({
+                              threadId: selected,
+                              title: groupTitle,
+                              description: groupDescription,
+                              handle: groupHandle,
+                            });
+                          }}
+                        >
+                          <p className="text-xs font-semibold">
+                            Owner group settings
+                          </p>
+                          <Input
+                            aria-label="Group display name"
+                            maxLength={80}
+                            value={groupTitle}
+                            onChange={e => setGroupTitle(e.target.value)}
+                          />
+                          <Input
+                            aria-label="Group description"
+                            maxLength={240}
+                            value={groupDescription}
+                            onChange={e => setGroupDescription(e.target.value)}
+                            placeholder="What is this group about?"
+                          />
+                          <label className="grid gap-1 text-xs">
+                            Group mention handle
+                            <Input
+                              aria-label="Group mention handle"
+                              maxLength={40}
+                              value={groupHandle}
+                              onChange={e =>
+                                setGroupHandle(
+                                  e.target.value.toLowerCase().replace(
+                                    /[^a-z0-9_-]/g,
+                                    ""
+                                  )
+                                )
+                              }
+                              placeholder="my-group"
+                            />
+                          </label>
+                          <Button
+                            className="w-fit"
+                            size="sm"
+                            disabled={
+                              saveThread.isPending ||
+                              !groupTitle.trim() ||
+                              !/^[a-z0-9][a-z0-9_-]{2,39}$/.test(groupHandle)
+                            }
+                          >
+                            Save group details
+                          </Button>
+                        </form>
+                      )}
+
+                      <div>
+                        <p className="text-xs font-semibold mb-2">Members</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {details.data?.members.map(person => (
+                            <div
+                              key={person.userId}
+                              className="person-choice"
+                            >
+                              <span className="min-w-0">
+                                <span className="block font-medium truncate">
+                                  @{person.username}
+                                </span>
+                                <span className="block text-xs text-neutral-500 truncate">
+                                  {person.memberTag || "Member"}
+                                </span>
+                              </span>
+                              {person.userId !== user?.id && (
+                                <Link
+                                  className="chip-link shrink-0"
+                                  to={`/messages?user=${person.userId}`}
+                                >
+                                  Message
+                                </Link>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
                 </header>
                 <div
                   key={`${selected}-${history.at(-1) ?? "latest"}-${showPins}`}
@@ -416,6 +613,15 @@ export default function Groups() {
                           {details.data?.members.find(
                             p => p.userId === m.senderId
                           )?.username ?? "Member"}
+                          {details.data?.members.find(
+                            p => p.userId === m.senderId
+                          )?.memberTag
+                            ? ` · ${
+                                details.data?.members.find(
+                                  p => p.userId === m.senderId
+                                )?.memberTag
+                              }`
+                            : ""}
                           {m.pinned ? " · pinned" : ""}
                           {m.editedAt ? " · edited" : ""}
                         </p>
@@ -478,7 +684,7 @@ export default function Groups() {
                           </form>
                         ) : (
                           <p className="whitespace-pre-wrap break-words">
-                            {m.text}
+                            <MentionText text={m.text} />
                           </p>
                         )}
                         {translated[m.id] && (
@@ -593,6 +799,14 @@ export default function Groups() {
                         </button>
                       </p>
                     )}
+                    <p className="text-[11px] text-neutral-500">
+                      Mention a member with @username. Mention this group in a
+                      status with{" "}
+                      <strong>
+                        @group:{details.data?.thread.handle || "group-handle"}
+                      </strong>
+                      .
+                    </p>
                     <div className="flex gap-2">
                       <Input
                         aria-label="Group message"

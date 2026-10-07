@@ -127,6 +127,7 @@ export const stories = mysqlTable(
       .default("image/webp")
       .notNull(),
     closeFriends: boolean("closeFriends").default(false).notNull(),
+    caption: varchar("caption", { length: 500 }),
     createdAt: created(),
   },
   t => [index("stories_created").on(t.createdAt)]
@@ -227,11 +228,24 @@ export const notifications = mysqlTable(
     id: id(),
     userId: userRef(),
     actorId: userRef("actorId"),
-    kind: mysqlEnum("kind", ["like", "comment", "follow", "request"]).notNull(),
+    kind: mysqlEnum("kind", [
+      "like",
+      "comment",
+      "follow",
+      "request",
+      "mention",
+      "group_mention",
+      "group_message",
+    ]).notNull(),
     postId: bigint("postId", { mode: "number", unsigned: true }).references(
       () => posts.id,
       { onDelete: "cascade" }
     ),
+    storyId: bigint("storyId", { mode: "number", unsigned: true }).references(
+      () => stories.id,
+      { onDelete: "cascade" }
+    ),
+    threadId: bigint("threadId", { mode: "number", unsigned: true }),
     readAt: timestamp("readAt"),
     createdAt: created(),
   },
@@ -244,6 +258,9 @@ export const messages = mysqlTable(
     senderId: userRef("senderId"),
     recipientId: userRef("recipientId"),
     text: text("text").notNull(),
+    replyId: bigint("replyId", { mode: "number", unsigned: true }),
+    editedAt: timestamp("editedAt"),
+    deletedAt: timestamp("deletedAt"),
     readAt: timestamp("readAt"),
     createdAt: created(),
   },
@@ -423,6 +440,13 @@ export const preferences = mysqlTable("preferences", {
   requests: mysqlEnum("requests", ["followers", "everyone", "nobody"])
     .notNull()
     .default("followers"),
+  groupInvites: mysqlEnum("groupInvites", ["followers", "everyone", "nobody"])
+    .notNull()
+    .default("followers"),
+  mentions: mysqlEnum("mentions", ["followers", "everyone", "nobody"])
+    .notNull()
+    .default("followers"),
+  readReceipts: boolean("readReceipts").notNull().default(true),
 });
 export const drafts = mysqlTable("drafts", {
   id: id(),
@@ -436,6 +460,8 @@ export const chatThreads = mysqlTable("chat_threads", {
   ownerId: userRef("ownerId"),
   title: varchar("title", { length: 80 }).notNull(),
   kind: mysqlEnum("kind", ["group", "broadcast"]).notNull(),
+  handle: varchar("handle", { length: 40 }).unique(),
+  description: varchar("description", { length: 240 }),
   inviteHash: varchar("inviteHash", { length: 64 }).unique(),
   inviteExpiresAt: timestamp("inviteExpiresAt"),
   createdAt: created(),
@@ -449,6 +475,10 @@ export const chatMembers = mysqlTable(
       .references(() => chatThreads.id, { onDelete: "cascade" }),
     userId: userRef(),
     accepted: boolean("accepted").notNull().default(false),
+    memberTag: varchar("memberTag", { length: 32 }),
+    notifications: mysqlEnum("notifications", ["all", "mentions", "muted"])
+      .notNull()
+      .default("all"),
     lastReadId: bigint("lastReadId", { mode: "number", unsigned: true })
       .notNull()
       .default(0),

@@ -1,60 +1,87 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
+import { Coins, Send, Sparkles, ShieldCheck } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-export const naira = (kobo: number) =>
-  new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(
-    kobo / 100
-  );
+
 export default function Wallet() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
-  const summary = trpc.wallet.summary.useQuery(),
-    tasks = trpc.wallet.tasks.useQuery(),
-    campaigns = trpc.wallet.campaigns.useQuery();
-  const refresh = () => {
-    void utils.wallet.invalidate();
-  };
-  const claim = trpc.wallet.claim.useMutation({ onSuccess: refresh }),
-    cash = trpc.wallet.claimCash.useMutation({ onSuccess: refresh });
-  const [pin, setPin] = useState(""),
-    [oldPin, setOldPin] = useState(""),
-    [amount, setAmount] = useState(""),
-    [withdrawPin, setWithdrawPin] = useState("");
-  const key = useRef(crypto.randomUUID());
-  const setWalletPin = trpc.wallet.setPin.useMutation({
+  const summary = trpc.wallet.summary.useQuery();
+  const tasks = trpc.wallet.tasks.useQuery();
+  const [search, setSearch] = useState("");
+  const [recipient, setRecipient] = useState<{
+    userId: number;
+    username: string;
+  } | null>(null);
+  const [amount, setAmount] = useState("");
+  const requestKey = useRef(crypto.randomUUID());
+
+  const people = trpc.social.searchUsers.useQuery(
+    { q: search.trim() },
+    { enabled: search.trim().length > 0 }
+  );
+  const refresh = () => void utils.wallet.invalidate();
+  const claim = trpc.wallet.claim.useMutation({ onSuccess: refresh });
+  const send = trpc.wallet.sendCoins.useMutation({
     onSuccess: () => {
-      setPin("");
-      setOldPin("");
-      refresh();
-    },
-  });
-  const withdraw = trpc.wallet.withdraw.useMutation({
-    onSuccess: () => {
-      key.current = crypto.randomUUID();
-      setWithdrawPin("");
+      requestKey.current = crypto.randomUUID();
       setAmount("");
+      setSearch("");
+      setRecipient(null);
       refresh();
     },
   });
+
   const balance = summary.data;
+  const amountNumber = useMemo(() => Number(amount), [amount]);
+
   return (
     <AppLayout>
-      <div className="max-w-3xl mx-auto p-4 sm:p-8 space-y-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-8 space-y-6 page-enter">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">Your wallet</h1>
+          <div>
+            <h1 className="text-2xl font-semibold">T Coin wallet</h1>
+            <p className="text-sm text-neutral-500 mt-1">
+              A virtual social balance for gifts, supporter memberships and
+              peer-to-peer fun inside T Social.
+            </p>
+          </div>
           {user?.role === "admin" && (
-            <Link className="text-sm underline" to="/wallet/admin">
-              Operations
+            <Link className="chip-link" to="/wallet/admin">
+              Virtual coin controls
             </Link>
           )}
         </div>
+
+        <section className="wallet-hero">
+          <div>
+            <p className="text-sm opacity-75">Available balance</p>
+            <p className="text-4xl sm:text-5xl font-black tracking-tight my-2">
+              {balance?.coins.toLocaleString() ?? "—"}
+            </p>
+            <p className="text-sm font-medium">T Coins</p>
+          </div>
+          <Coins className="w-12 h-12 opacity-70" aria-hidden="true" />
+        </section>
+
+        <div className="surface-card flex gap-3 items-start">
+          <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">Virtual only — no real money</p>
+            <p className="text-sm text-neutral-500 mt-1">
+              T Coins have no cash value. They cannot be deposited, withdrawn,
+              exchanged for naira or converted into any real-world currency.
+            </p>
+          </div>
+        </div>
+
         {summary.isLoading && <p role="status">Loading wallet…</p>}
         {summary.error && (
-          <p role="alert">
+          <p role="alert" className="surface-card">
             Wallet unavailable.{" "}
             <button
               className="underline"
@@ -64,54 +91,29 @@ export default function Wallet() {
             </button>
           </p>
         )}
-        {balance && (
-          <>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <section className="border rounded-xl p-5">
-                <p className="text-sm text-neutral-500">T Coins</p>
-                <p className="text-3xl font-semibold my-2">
-                  {balance.coins.toLocaleString()}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Virtual credits for creator gifts and supporter memberships.
-                  No cash value.
-                </p>
-              </section>
-              <section className="border rounded-xl p-5">
-                <p className="text-sm text-neutral-500">Funded earnings</p>
-                <p className="text-3xl font-semibold my-2">
-                  {naira(balance.cashKobo)}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Only approved, funded rewards can be withdrawn.
-                </p>
-              </section>
-            </div>
-            {balance.testMode && (
-              <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm">
-                Payment sandbox: these are test transactions, not real money.
-              </p>
-            )}
-            {balance.frozen && (
-              <p role="alert" className="text-red-600 text-sm">
-                Your wallet is under review. Transfers are paused.
-              </p>
-            )}
-            <section className="space-y-3">
-              <h2 className="font-semibold">Earn T Coins</h2>
-              <p className="text-sm text-neutral-500">
-                Each task pays once. Likes, views and repeated signups do not
-                earn cash.
-              </p>
-              {tasks.data?.map(t => (
-                <div
-                  key={t.id}
-                  className="border rounded-lg p-3 flex items-center justify-between gap-3"
-                >
+
+        {balance?.frozen && (
+          <p role="alert" className="surface-card text-red-600 text-sm">
+            Your virtual wallet is temporarily restricted.
+          </p>
+        )}
+
+        <section className="space-y-3">
+          <div className="flex gap-2 items-center">
+            <Sparkles className="w-5 h-5" />
+            <h2 className="font-semibold">Earn T Coins</h2>
+          </div>
+          <p className="text-sm text-neutral-500">
+            Each task pays once. Rewards stay entirely inside T Social.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {tasks.data?.map(t => (
+              <div key={t.id} className="surface-card interactive-lift">
+                <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{t.title}</p>
-                    <p className="text-xs text-neutral-500">
-                      {t.coins} T Coins
+                    <p className="text-xs text-neutral-500 mt-1">
+                      +{t.coins} T Coins
                     </p>
                   </div>
                   <Button
@@ -126,189 +128,140 @@ export default function Wallet() {
                         : "Complete task"}
                   </Button>
                 </div>
-              ))}
-            </section>
-            <section className="space-y-3">
-              <h2 className="font-semibold">Funded campaigns</h2>
-              {!balance.cashEnabled && (
-                <p className="text-sm text-neutral-500">
-                  Cash rewards and withdrawals are paused until payment and
-                  identity services are ready. No cash signup bonus is promised.
-                </p>
-              )}
-              {campaigns.data?.map(c => (
-                <div
-                  key={c.id}
-                  className="border rounded-lg p-3 flex justify-between items-center gap-3"
-                >
-                  <div>
-                    <p className="text-sm font-medium break-words">{c.title}</p>
-                    <p className="text-xs text-neutral-500">
-                      {naira(c.amount)} · {c.task.replaceAll("_", " ")} · while
-                      budget remains
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    disabled={
-                      !balance.cashEnabled ||
-                      !balance.verified ||
-                      cash.isPending ||
-                      balance.frozen
-                    }
-                    onClick={() => cash.mutate({ campaignId: c.id })}
-                  >
-                    Claim
-                  </Button>
-                </div>
-              ))}
-              {campaigns.data?.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  No funded campaigns are available.
-                </p>
-              )}
-            </section>
-            <section className="border rounded-xl p-4 space-y-3">
-              <h2 className="font-semibold">Wallet security</h2>
-              <p className="text-sm text-neutral-500">
-                Identity:{" "}
-                {balance.verified
-                  ? "reviewed"
-                  : "verification required before cash rewards"}
-                .{" "}
-                {balance.recipientLabel &&
-                  `Payout account: ${balance.recipientLabel}.`}{" "}
-                Sign in again before changing your PIN or requesting a
-                withdrawal.
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="surface-card space-y-4">
+          <div className="flex items-center gap-2">
+            <Send className="w-5 h-5" />
+            <div>
+              <h2 className="font-semibold">Send T Coins</h2>
+              <p className="text-xs text-neutral-500">
+                Transfer virtual coins to another T Social member.
               </p>
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={e => {
-                  e.preventDefault();
-                  setWalletPin.mutate({ pin, currentPin: oldPin || undefined });
-                }}
-              >
-                {balance.hasPin && (
-                  <Input
-                    className="w-40"
-                    aria-label="Current wallet PIN"
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    autoComplete="off"
-                    placeholder="Current PIN"
-                    value={oldPin}
-                    onChange={e => setOldPin(e.target.value)}
-                  />
-                )}
-                <Input
-                  className="w-40"
-                  aria-label="New wallet PIN"
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  autoComplete="new-password"
-                  placeholder="New 6-digit PIN"
-                  value={pin}
-                  onChange={e => setPin(e.target.value)}
-                />
+            </div>
+          </div>
+
+          {!recipient ? (
+            <>
+              <Input
+                aria-label="Find T Coin recipient"
+                maxLength={50}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search username"
+              />
+              <div className="grid gap-2">
+                {people.data
+                  ?.filter(p => p.userId !== user?.id)
+                  .map(p => (
+                    <button
+                      type="button"
+                      key={p.userId}
+                      className="person-choice"
+                      onClick={() =>
+                        setRecipient({
+                          userId: p.userId,
+                          username: p.username,
+                        })
+                      }
+                    >
+                      <span className="font-medium">@{p.username}</span>
+                      <span className="text-xs text-neutral-500">Choose</span>
+                    </button>
+                  ))}
+              </div>
+            </>
+          ) : (
+            <form
+              className="grid gap-3"
+              onSubmit={e => {
+                e.preventDefault();
+                if (
+                  Number.isSafeInteger(amountNumber) &&
+                  amountNumber > 0 &&
+                  !send.isPending
+                )
+                  send.mutate({
+                    userId: recipient.userId,
+                    amount: amountNumber,
+                    requestKey: requestKey.current,
+                  });
+              }}
+            >
+              <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                <span className="text-sm">
+                  Sending to <strong>@{recipient.username}</strong>
+                </span>
                 <Button
+                  type="button"
                   size="sm"
-                  disabled={!/^\d{6}$/.test(pin) || setWalletPin.isPending}
+                  variant="ghost"
+                  onClick={() => setRecipient(null)}
                 >
-                  Save PIN
+                  Change
                 </Button>
-              </form>
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={e => {
-                  e.preventDefault();
-                  if (/^\d{1,5}(\.\d{1,2})?$/.test(amount)) {
-                    const [whole, fraction = ""] = amount.split(".");
-                    withdraw.mutate({
-                      amount:
-                        Number(whole) * 100 + Number(fraction.padEnd(2, "0")),
-                      pin: withdrawPin,
-                      requestKey: key.current,
-                    });
-                  }
-                }}
-              >
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <Input
-                  className="w-40"
-                  aria-label="Withdrawal amount in naira"
-                  inputMode="decimal"
-                  placeholder="Naira · min 500"
+                  aria-label="T Coin amount"
+                  className="max-w-48"
+                  type="number"
+                  min={1}
+                  max={100000}
+                  step={1}
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
-                />
-                <Input
-                  className="w-40"
-                  aria-label="Withdrawal PIN"
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  autoComplete="off"
-                  placeholder="Wallet PIN"
-                  value={withdrawPin}
-                  onChange={e => setWithdrawPin(e.target.value)}
+                  placeholder="Amount"
                 />
                 <Button
-                  size="sm"
                   disabled={
-                    !balance.cashEnabled ||
-                    !balance.verified ||
-                    !balance.hasPin ||
-                    balance.frozen ||
-                    withdraw.isPending ||
-                    !/^\d{6}$/.test(withdrawPin) ||
-                    !/^\d{1,5}(\.\d{1,2})?$/.test(amount)
+                    send.isPending ||
+                    !Number.isSafeInteger(amountNumber) ||
+                    amountNumber < 1
                   }
                 >
-                  Request withdrawal
+                  Send T Coins
                 </Button>
-              </form>
-              <p className="text-xs text-neutral-500">
-                Cash is reserved when requested. An operator reviews the payout.
-                Provider fees and settlement delays may apply.
-              </p>
-            </section>
-            <section>
-              <h2 className="font-semibold mb-3">Activity</h2>
-              {balance.history.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  Your rewards and transfers will appear here.
+              </div>
+              {send.error && (
+                <p role="alert" className="text-sm text-red-600">
+                  {send.error.message}
                 </p>
               )}
-              <div className="divide-y">
-                {balance.history.map(h => (
-                  <div
-                    key={h.id}
-                    className="flex justify-between gap-3 py-3 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="break-words">{h.description}</p>
-                      <p className="text-xs text-neutral-500">
-                        {new Date(h.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className="shrink-0">
-                      {h.amount > 0 ? "+" : ""}
-                      {h.currency === "NGN"
-                        ? naira(h.amount)
-                        : `${h.amount} coins`}
-                    </span>
-                  </div>
-                ))}
+            </form>
+          )}
+        </section>
+
+        <section>
+          <h2 className="font-semibold mb-3">Virtual coin activity</h2>
+          {!balance?.history.length && (
+            <p className="text-sm text-neutral-500">
+              Your T Coin rewards and transfers will appear here.
+            </p>
+          )}
+          <div className="grid gap-2">
+            {balance?.history.map(h => (
+              <div
+                key={h.id}
+                className="surface-card flex justify-between items-center gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm break-words">{h.description}</p>
+                  <p className="text-xs text-neutral-500">
+                    {new Date(h.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <span className="font-semibold shrink-0">
+                  {h.amount > 0 ? "+" : ""}
+                  {h.amount.toLocaleString()}
+                </span>
               </div>
-              {balance.payouts.map(p => (
-                <p key={p.id} className="text-sm py-2">
-                  Withdrawal {naira(p.amount)} · {p.status}
-                </p>
-              ))}
-            </section>
-          </>
-        )}
+            ))}
+          </div>
+        </section>
       </div>
     </AppLayout>
   );

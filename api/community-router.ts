@@ -610,6 +610,9 @@ export const communityRouter = createRouter({
         theme: "system" as const,
         language: "en" as const,
         requests: "followers" as const,
+        groupInvites: "followers" as const,
+        mentions: "followers" as const,
+        readReceipts: true,
       }
   ),
   setPreferences: authedQuery
@@ -618,6 +621,9 @@ export const communityRouter = createRouter({
         theme: z.enum(["system", "light", "dark"]),
         language: z.enum(["en", "fr", "yo"]),
         requests: z.enum(["followers", "everyone", "nobody"]),
+        groupInvites: z.enum(["followers", "everyone", "nobody"]),
+        mentions: z.enum(["followers", "everyone", "nobody"]),
+        readReceipts: z.boolean(),
       })
     )
     .mutation(async ({ ctx, input }) => {

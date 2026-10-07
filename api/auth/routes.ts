@@ -46,8 +46,35 @@ routes.get("/providers", c =>
       p => !!providerConfig(p)
     ),
     phone: phoneEnabled(),
+    staging: process.env.STAGING_DEMO_LOGIN === "true",
   })
 );
+routes.post("/staging", async c => {
+  if (process.env.STAGING_DEMO_LOGIN !== "true")
+    return c.json({ error: "Staging sign-in is disabled" }, 404);
+  if (
+    !(await allowRequest(
+      `staging-login:${c.req.header("x-t-client-key") || "shared"}`,
+      20,
+      3600
+    ))
+  )
+    return c.json({ error: "Too many sign-in attempts" }, 429);
+  const userId = await resolveAccount({
+    provider: "staging",
+    issuer: "t-social-render-staging",
+    client: "t-social",
+    subject: "demo-member",
+    name: "T Social Demo",
+    email: null,
+  });
+  c.header(
+    "set-cookie",
+    await createSession(userId, c.req.header("user-agent") || "Browser")
+  );
+  return c.json({ ok: true });
+});
+
 routes.post("/:provider/start", async c => {
   const provider = c.req.param("provider");
   const config = providerConfig(provider);

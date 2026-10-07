@@ -9,7 +9,26 @@ import { requireUnblocked, unblocked } from "./services/access";
 import { claimUploads } from "./services/uploads";
 import { digest, randomToken } from "./auth/security";
 import { storage } from "./services/storage";
+import {
+  notifyGroupMessage,
+  notifyTextMentions,
+} from "./services/mentions";
 const id = z.number().int().positive();
+const handle = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_-]{2,39}$/);
+
+function buildHandle(title: string, threadId: number) {
+  const base =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 24) || "group";
+  return `${base}-${threadId}`;
+}
 async function member(threadId: number, userId: number, accepted = true) {
   const [m] = await getDb()
     .select({ member: s.chatMembers, thread: s.chatThreads })
@@ -40,6 +59,9 @@ export const chatRouter = createRouter({
         kind: s.chatThreads.kind,
         accepted: s.chatMembers.accepted,
         ownerId: s.chatThreads.ownerId,
+        handle: s.chatThreads.handle,
+        memberTag: s.chatMembers.memberTag,
+        notifications: s.chatMembers.notifications,
       })
       .from(s.chatMembers)
       .innerJoin(s.chatThreads, eq(s.chatThreads.id, s.chatMembers.threadId))
@@ -68,12 +90,12 @@ export const chatRouter = createRouter({
           .select()
           .from(s.preferences)
           .where(eq(s.preferences.userId, user));
-        if (p?.requests === "nobody")
+        if (p?.groupInvites === "nobody")
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "A selected account does not accept invitations",
           });
-        if ((p?.requests ?? "followers") === "followers") {
+        if ((p?.groupInvites ?? "followers") === "followers") {
           const [f] = await getDb()
             .select()
             .from(s.follows)
@@ -99,6 +121,10 @@ export const chatRouter = createRouter({
           kind: input.kind,
         });
         const threadId = Number(r[0].insertId);
+        await tx
+          .update(s.chatThreads)
+          .set({ handle: buildHandle(input.title, threadId) })
+          .where(eq(s.chatThreads.id, threadId));
         await tx
           .insert(s.chatMembers)
           .values([
@@ -193,6 +219,8 @@ export const chatRouter = createRouter({
           userId: s.chatMembers.userId,
           username: s.profiles.username,
           lastReadId: s.chatMembers.lastReadId,
+          memberTag: s.chatMembers.memberTag,
+          notifications: s.chatMembers.notifications,
         })
         .from(s.chatMembers)
         .innerJoin(s.profiles, eq(s.profiles.userId, s.chatMembers.userId))
@@ -207,6 +235,10 @@ export const chatRouter = createRouter({
       return {
         thread: m.thread,
         members,
+        membership: {
+          memberTag: m.member.memberTag,
+          notifications: m.member.notifications,
+        },
         translationEnabled: !!process.env.TRANSLATE_API_URL,
       };
     }),
@@ -372,7 +404,21 @@ export const chatRouter = createRouter({
           replyId: input.replyId,
           deliverAt: input.deliverAt ?? new Date(),
         });
-        return { id: Number(r[0].insertId) };
+        const messageId = Number(r[0].insertId);
+        return { id: messageId };
+      }).then(async result => {
+        if (!input.deliverAt || input.deliverAt <= new Date()) {
+          await notifyGroupMessage({
+            actorId: ctx.user.id,
+            threadId: input.threadId,
+          });
+          await notifyTextMentions({
+            actorId: ctx.user.id,
+            text: input.text,
+            threadId: input.threadId,
+          });
+        }
+        return result;
       });
     }),
   update: authedQuery
@@ -679,6 +725,63 @@ export const chatRouter = createRouter({
         return { id: thread.id };
       })
     ),
+  updateMembership: authedQuery
+    .input(
+      z.object({
+        threadId: id,
+        memberTag: z.string().trim().max(32).optional(),
+        notifications: z.enum(["all", "mentions", "muted"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const m = await member(input.threadId, ctx.user.id);
+      await getDb()
+        .update(s.chatMembers)
+        .set({
+          memberTag: input.memberTag?.trim() || null,
+          notifications: input.notifications,
+        })
+        .where(eq(s.chatMembers.id, m.member.id));
+      return { ok: true };
+    }),
+  updateThread: authedQuery
+    .input(
+      z.object({
+        threadId: id,
+        title: z.string().trim().min(1).max(80),
+        description: z.string().trim().max(240),
+        handle,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const m = await member(input.threadId, ctx.user.id);
+      if (m.thread.ownerId !== ctx.user.id)
+        throw new TRPCError({ code: "FORBIDDEN" });
+      const [clash] = await getDb()
+        .select({ id: s.chatThreads.id })
+        .from(s.chatThreads)
+        .where(
+          and(
+            eq(s.chatThreads.handle, input.handle),
+            sql`${s.chatThreads.id} <> ${input.threadId}`
+          )
+        )
+        .limit(1);
+      if (clash)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "That group handle is already in use",
+        });
+      await getDb()
+        .update(s.chatThreads)
+        .set({
+          title: input.title,
+          description: input.description || null,
+          handle: input.handle,
+        })
+        .where(eq(s.chatThreads.id, input.threadId));
+      return { ok: true };
+    }),
   translate: authedQuery
     .input(z.object({ id, target: z.enum(["en", "fr", "yo"]) }))
     .mutation(async ({ ctx, input }) => {
