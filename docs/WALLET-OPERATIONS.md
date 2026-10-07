@@ -1,43 +1,63 @@
-# Wallet design and operating boundaries
+# T Coin wallet design and operating boundaries
 
-## Research and product decisions
+## Product rule
 
-Public documentation was reviewed; no access to another company's private wallet backend was claimed.
+T Social uses **virtual T Coins only**. A T Coin is an in-app social credit, not money, stored value, a deposit, a bank balance or a claim on Timzee Corp. T Coins have no naira exchange rate and cannot be withdrawn, redeemed for cash or converted into another currency.
 
-| Reference                                                                                                                                                                                                          | What the published material shows                                                                                                                             | Decision for T Social                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [LagosLife terms](https://lagoslife.app/terms), updated 1 October 2026                                                                                                                                             | In-game naira and virtual items have no real-world value and cannot be cashed out. Wallet top-ups buy game currency through a payment provider.               | Keep T Coins clearly separate from NGN earnings. Do not display a fictitious withdrawable signup balance.                                                                                            |
-| [TikTok Gifts](https://support.tiktok.com/en/live-gifts-wallet/gifts/gifts?lang=en) and [virtual items policy](https://t.tiktok.com/legal/page/row/virtual-items/en), updated 22 January 2026                      | In-app virtual items activate platform features; coin spending and history are shown to users. Eligibility and applicable program rules matter.               | Show coin costs before a gift/support purchase and show transaction history. T Coins in this release are earned credits, not purchased TikTok-style coins or convertible creator payouts.            |
-| [TikTok Rewards](https://www.tiktok.com/tiktok-rewards/benefits-rewards/)                                                                                                                                          | Its published referral/task model uses eligibility rules and regional redemption options. This older page does not establish current availability in Nigeria. | A funded task campaign can encourage useful participation, with one claim per reviewed identity and a hard budget. No cash-for-watch spam loop, pyramid referrals or unlimited cash signup promises. |
-| [Paystack webhooks](https://paystack.com/docs/payments/webhooks/), [payment verification](https://paystack.com/docs/payments/verify-payments/), [transfers](https://paystack.com/docs/transfers/single-transfers/) | Signed webhook delivery, server verification and asynchronous transfer results require careful processing.                                                    | Verify exact raw-body HMAC, then verify financial fields remotely. Never credit from a browser callback or refund an ambiguous transfer.                                                             |
+The active application has no payment-provider webhook, funding checkout, bank-recipient workflow, KYC-for-payout flow, cash campaign, NGN balance or withdrawal endpoint. Provider secrets are not part of the runtime configuration.
 
-The engagement mechanisms implemented are visible task completion, a persistent wallet history, post gifts and creator support. More cash tasks should only be added with a funded campaign and a reliable server-side eligibility signal. Referrals, streak rewards and paid watch tasks are deliberately not declared implemented.
+## What members can do
 
-## Accounting
+Members can:
 
-Amounts are integer T Coins or integer kobo. There is no coin-to-naira rate. Every journal has two equal and opposite entries in one currency. Account balances are updated in the same database transaction. Accounts lock in a consistent order, transaction references are unique, replays must match the original amount/accounts, and lock failures are retried with a bounded local transaction retry. Negative balances are allowed only on explicit platform issuance/clearing accounts. User wallets cannot go below zero.
+- claim bounded one-time T Coin rewards for supported product tasks;
+- send virtual T Coins to another T Social member;
+- gift T Coins to a creator or a creator post;
+- spend 200 T Coins on a 30-day supporter record;
+- review their virtual coin transaction history.
 
-Financial journals and entries have no edit/delete API. Foreign keys retain them when an account deletion is attempted. Use a dedicated migration identity for DDL; runtime DB credentials should have no UPDATE/DELETE on wallet_journal/wallet_entries and no schema-management permissions. The inline operator audit checks journal balance and cached balances; it scans accumulated rows and must move to a paginated/offline reconciliation job as records grow.
+These actions never create a real-money entitlement. Product copy must continue to make that boundary visible wherever a user could reasonably confuse a virtual balance with cash.
 
-A verified funding charge moves its amount minus reported payment fees into the platform treasury. Allocating a campaign moves budget into a dedicated campaign account. Claiming moves budget into a user's NGN account and decrements the campaign's remaining budget under a row lock. A user can claim each campaign once. Campaign expiry prevents further claims; unused allocation remains reserved until an operator builds and reviews a close/release workflow.
+## Accounting model
 
-A withdrawal moves earnings into a separate reserved account before contacting Paystack. An operator submits it once. A verified success moves the reservation to the paid account. A verified failure returns it once; a verified reversal can return a previously paid amount. Timeout/unknown status stays submitted and reserved. Reconcile the reference; do not resubmit or refund by guessing. A signed dispute/refund notification freezes existing NGN accounts and records an event; automatic dispute accounting and unfreeze are not implemented. Operators must resolve collateral and chargeback exposure before restoring service through a reviewed administrative process.
+T Coins use a double-entry application ledger. Every transfer has two equal and opposite entries in the COIN currency. Account balances and journal entries are written in the same database transaction.
 
-## Enable in staging first
+Important invariants:
 
-1. Apply committed migrations, using a UTF-8/utf8mb4 database. Create a Paystack **test** integration; keep its keys server-only.
-2. Set WALLET_CASH_ENABLED=true and PAYSTACK_SECRET_KEY to the test secret. Test keys mean simulated money; the wallet labels sandbox mode.
-3. Assign a controlled operator the admin role and include the exact user ID in WALLET_OPERATOR_IDS. A moderator without that allowlist entry cannot access financial operations. The default allowlist is empty.
-4. Configure the webhook as `https://YOUR_DOMAIN/api/wallet/paystack`. Browser callbacks do not grant value. Check duplicate delivery, invalid signatures, field mismatches and remote timeouts in the actual integration.
-5. Establish an approved identity-verification process outside the app. Record a stable, unique identity-provider review reference and an active NGN Paystack recipient code. A bank recipient is **not** proof of KYC. No BVN, NIN or raw bank account number is collected by this code.
-6. Reauthenticate within five minutes to fund/allocate/review/submit. Funding must be verified before allocating a reward budget. Users also need a fresh session, a hashed six-digit PIN and reviewed recipient before requesting cash withdrawal.
-7. Check available provider balance, actual settlement, transfer fees, risk screening and account-name/identity match before approving a payout. A successful charge is not proof that funds are already settled and withdrawable at the provider.
-8. Run daily reconciliation and alerts, provide customer support and dispute procedures, set operating budgets, establish approval separation and complete live acceptance tests before using live keys.
+- transfer amounts are positive safe integers;
+- user balances cannot go below zero;
+- unique request references make retries idempotent;
+- replayed references must match the original accounts, amount and transaction kind;
+- wallet accounts are locked in a stable order to reduce deadlocks;
+- bounded retries handle database lock/deadlock failures;
+- only the explicit platform issuance account may run negative to mint product credits;
+- users cannot edit or delete ledger journal records through the application.
 
-Minimum user withdrawal is NGN 500; maximum per request NGN 50,000 in this release. These are application defaults, not provider/regulatory limits. PIN changes and payout attempts have separate SQL-backed attempt quotas. Limits do not replace identity, sanctions/AML or fraud controls.
+The current schema still retains historical migration definitions for previously prototyped wallet tables/currency values so existing installations can migrate safely, but the application no longer exposes or mounts those real-money flows. Do not re-enable them by configuration.
 
-The wallet is an application ledger for funded rewards, not a banking license or a licensed stored-value service. [CBN payment supervision](https://www.cbn.gov.ng/PaymentsSystem/index.html) publishes applicable payments frameworks; the exact legal classification and obligations of this product require qualified Nigerian review and agreement with the chosen regulated provider before public money operations.
+## Administration
 
-## Current limitations
+Administrators have a virtual-coin control screen that can grant T Coins to an existing user with:
 
-No user deposits or top-ups, peer cash transfer, coin conversion, recurring card subscriptions, automated KYC, account-name matching workflow, automated sanctions checks, automated daily payout cap, risk scoring, dual-person financial approval, automatic settlement reconciliation or safe self-service PIN recovery. No live payment was executed during development. Payout submission is manual; a process failure between claiming a submission and making the provider request can leave a reservation requiring operator investigation. No operator override may invent settled funds.
+- a bounded positive amount;
+- a human-readable reason;
+- an idempotent request key;
+- a ledger entry from the platform issuance account.
+
+Administrative grants should be used for product support, promotions or corrections that are explicitly virtual. They must never be described as salary, cash, withdrawable earnings or a guaranteed monetary reward.
+
+The admin audit checks cached COIN balances against accumulated ledger entries and verifies that each COIN journal balances to zero with two entries. As the ledger grows, move this full scan to a paginated/offline reconciliation job rather than running an unbounded administrative request.
+
+## Scaling notes
+
+The shared issuance account is intentionally simple and is not a billion-user wallet architecture. Before very large scale:
+
+- partition or isolate wallet workloads from general social traffic;
+- add queue/outbox handling for reward side effects;
+- measure lock contention and ledger write throughput;
+- build paginated reconciliation and anomaly alerts;
+- introduce explicit rate limits for peer transfers and administrative grants;
+- add product-level anti-abuse rules for farming reward tasks;
+- test backup/restore and idempotent replay behavior under failure.
+
+None of those scaling improvements should change the core product rule: **T Coins remain virtual-only and non-redeemable.**
