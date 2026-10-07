@@ -5,7 +5,6 @@ ALTER TABLE `messages` ADD `deletedAt` timestamp;--> statement-breakpoint
 ALTER TABLE `preferences` ADD `groupInvites` enum('followers','everyone','nobody') NOT NULL DEFAULT 'followers';--> statement-breakpoint
 ALTER TABLE `preferences` ADD `mentions` enum('followers','everyone','nobody') NOT NULL DEFAULT 'followers';--> statement-breakpoint
 ALTER TABLE `preferences` ADD `readReceipts` boolean NOT NULL DEFAULT true;--> statement-breakpoint
-ALTER TABLE `preferences` ADD `activityStatus` boolean NOT NULL DEFAULT true;--> statement-breakpoint
 ALTER TABLE `chat_threads` ADD `handle` varchar(40);--> statement-breakpoint
 ALTER TABLE `chat_threads` ADD `description` varchar(240);--> statement-breakpoint
 ALTER TABLE `chat_threads` ADD CONSTRAINT `chat_threads_handle_unique` UNIQUE(`handle`);--> statement-breakpoint
