@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run check && npm run build
+RUN npx tsc -b && npm run build
 
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates mariadb-server mariadb-client && rm -rf /var/lib/apt/lists/*
