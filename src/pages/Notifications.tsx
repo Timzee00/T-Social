@@ -16,6 +16,8 @@ export default function Notifications() {
     comment: "commented on your post",
     follow: "followed you",
     request: "requested to follow you",
+    mention: "mentioned you in a status or conversation",
+    group_mention: "mentioned a group you belong to",
   };
   return (
     <AppLayout>
@@ -45,9 +47,13 @@ export default function Notifications() {
               to={
                 n.kind === "request"
                   ? "/settings"
-                  : n.postId
-                    ? `/post/${n.postId}`
-                    : `/${n.username}`
+                  : n.threadId
+                    ? `/groups?thread=${n.threadId}`
+                    : n.postId
+                      ? `/post/${n.postId}`
+                      : n.storyId
+                        ? "/"
+                        : `/${n.username}`
               }
               className={`block rounded-xl border p-4 text-sm ${!n.readAt ? "bg-neutral-50" : ""}`}
             >
