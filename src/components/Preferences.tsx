@@ -145,23 +145,7 @@ export function Preferences() {
           />
         </label>
 
-        <label className="setting-row">
-          <span>
-            <span className="block text-sm font-medium">Activity status</span>
-            <span className="block text-xs text-neutral-500">
-              Reserved for presence indicators so you control whether others
-              can see when you are active.
-            </span>
-          </span>
-          <input
-            aria-label="Activity status"
-            type="checkbox"
-            className="toggle-control"
-            checked={p.data.activityStatus}
-            disabled={save.isPending}
-            onChange={e => update({ activityStatus: e.target.checked })}
-          />
-        </label>
+
       </div>
 
       <details className="rounded-xl border p-3 text-xs">
