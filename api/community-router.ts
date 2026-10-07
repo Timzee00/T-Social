@@ -613,7 +613,6 @@ export const communityRouter = createRouter({
         groupInvites: "followers" as const,
         mentions: "followers" as const,
         readReceipts: true,
-        activityStatus: true,
       }
   ),
   setPreferences: authedQuery
@@ -625,7 +624,6 @@ export const communityRouter = createRouter({
         groupInvites: z.enum(["followers", "everyone", "nobody"]),
         mentions: z.enum(["followers", "everyone", "nobody"]),
         readReceipts: z.boolean(),
-        activityStatus: z.boolean(),
       })
     )
     .mutation(async ({ ctx, input }) => {
