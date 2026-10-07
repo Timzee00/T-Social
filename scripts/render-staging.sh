@@ -28,8 +28,8 @@ done
 
 mariadb --socket=/run/mysqld/mysqld.sock -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS t_social CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'tsocial'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
-ALTER USER 'tsocial'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
+CREATE USER IF NOT EXISTS 'tsocial'@'127.0.0.1';
+ALTER USER 'tsocial'@'127.0.0.1' IDENTIFIED BY '';
 GRANT ALL PRIVILEGES ON t_social.* TO 'tsocial'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
