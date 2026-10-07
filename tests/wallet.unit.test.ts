@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { validateAmount } from "../api/wallet/ledger";
 import { hashtags } from "../api/services/hashtags";
+import { mentionedGroups, mentionedUsers } from "../api/services/mentions";
 describe("wallet input boundaries", () => {
   it("rejects fractional, negative, zero, infinite and unsafe amounts", () => {
     for (const n of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER])
@@ -14,6 +15,14 @@ describe("wallet input boundaries", () => {
       "good_day",
     ]);
     expect(hashtags("a#ignored")).toEqual([]);
+  });
+  it("separates user mentions from group mention handles", () => {
+    expect(
+      mentionedUsers("Hi @Alice @alice and @group:Design-Team with @bob")
+    ).toEqual(["alice", "bob"]);
+    expect(
+      mentionedGroups("@group:Design-Team @group:design-team @group:launch")
+    ).toEqual(["design-team", "launch"]);
   });
 });
 import { rankPosts } from "../api/services/recommendations";
