@@ -11,7 +11,7 @@ ALTER TABLE `chat_threads` ADD `description` varchar(240);--> statement-breakpoi
 ALTER TABLE `chat_threads` ADD CONSTRAINT `chat_threads_handle_unique` UNIQUE(`handle`);--> statement-breakpoint
 ALTER TABLE `chat_members` ADD `memberTag` varchar(32);--> statement-breakpoint
 ALTER TABLE `chat_members` ADD `notifications` enum('all','mentions','muted') NOT NULL DEFAULT 'all';--> statement-breakpoint
-ALTER TABLE `notifications` MODIFY COLUMN `kind` enum('like','comment','follow','request','mention','group_mention') NOT NULL;--> statement-breakpoint
+ALTER TABLE `notifications` MODIFY COLUMN `kind` enum('like','comment','follow','request','mention','group_mention','group_message') NOT NULL;--> statement-breakpoint
 ALTER TABLE `notifications` ADD `storyId` bigint unsigned;--> statement-breakpoint
 ALTER TABLE `notifications` ADD `threadId` bigint unsigned;--> statement-breakpoint
 ALTER TABLE `notifications` ADD CONSTRAINT `notifications_storyId_stories_id_fk` FOREIGN KEY (`storyId`) REFERENCES `stories`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
